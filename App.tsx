@@ -5,7 +5,8 @@ import {
   ShoppingCart, Plus, Minus, X, Settings, Utensils, Trash2, 
   Zap, Flame, Palette, ArrowLeft, ShoppingBag, Sparkles, 
   Image as ImageIcon, Info, Clock, Edit2, LogOut, LogIn,
-  ClipboardList, Package, Truck, CheckCircle, Ban, User, Phone, MapPin, MessageSquare, AlertTriangle
+  ClipboardList, Package, Truck, CheckCircle, Ban, User, Phone, MapPin, MessageSquare, AlertTriangle,
+  Bell, Check, Info as InfoIcon
 } from 'lucide-react';
 import { 
   collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, 
@@ -20,6 +21,12 @@ import { Dish, CartItem, Category, Order, OrderStatus } from './types';
 
 // Fix: Define User type as any to avoid import issues from firebase/auth
 type User = any;
+
+interface Notification {
+  id: number;
+  message: string;
+  type: 'success' | 'error' | 'info';
+}
 
 export default function App() {
   const [menu, setMenu] = useState<Dish[]>([]);
@@ -36,9 +43,16 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [orderIdToCancel, setOrderIdToCancel] = useState<string | null>(null);
+  const [dishIdToDelete, setDishIdToDelete] = useState<string | null>(null);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+
+  // Form errors
+  const [loginErrors, setLoginErrors] = useState<string[]>([]);
+  const [checkoutErrors, setCheckoutErrors] = useState<string[]>([]);
+  const [dishErrors, setDishErrors] = useState<string[]>([]);
 
   // Checkout Form State
   const [checkoutForm, setCheckoutForm] = useState({
@@ -59,6 +73,15 @@ export default function App() {
   });
   const [uploadingImage, setUploadingImage] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Helper for notifications
+  const notify = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    const id = Date.now();
+    setNotifications(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    }, 4000);
+  };
 
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, (u: any) => {
@@ -122,10 +145,12 @@ export default function App() {
     setCart(prev => {
       const existing = prev.find(item => item.id === dish.id);
       if (existing) {
+        notify(`Додано ще одну порцію: ${dish.name}`, 'info');
         return prev.map(item => 
           item.id === dish.id ? { ...item, quantity: item.quantity + 1 } : item
         );
       }
+      notify(`Страву ${dish.name} додано до кошика`, 'success');
       return [...prev, { ...dish, quantity: 1 }];
     });
   };
@@ -141,19 +166,28 @@ export default function App() {
   };
 
   const removeFromCart = (id: string) => {
+    const item = cart.find(i => i.id === id);
+    if (item) notify(`${item.name} видалено з кошика`, 'info');
     setCart(prev => prev.filter(item => item.id !== id));
+  };
+
+  const validateCheckout = () => {
+    const errors: string[] = [];
+    if (!checkoutForm.name.trim()) errors.push("Ім'я обов'язкове");
+    if (!checkoutForm.phone.match(/^\+380\d{9}$/)) errors.push("Телефон має бути у форматі +380XXXXXXXXX");
+    if (!checkoutForm.address.trim()) errors.push("Адреса доставки обов'язкова");
+    setCheckoutErrors(errors);
+    return errors.length === 0;
   };
 
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
     if (user) {
-      alert('Адміністратори не можуть оформлювати замовлення.');
+      notify('Адміністратори не можуть оформлювати замовлення.', 'error');
       return;
     }
-    if (!checkoutForm.name || !checkoutForm.phone || !checkoutForm.address) {
-      alert('Будь ласка, заповніть обов\'язкові поля');
-      return;
-    }
+    
+    if (!validateCheckout()) return;
 
     const orderTotal = cart.reduce((acc, item) => acc + (item.price * item.quantity), 0);
     const orderData = {
@@ -166,13 +200,14 @@ export default function App() {
 
     try {
       await addDoc(collection(db, 'orders'), orderData);
-      alert('Замовлення успішно розміщене! Наш кур\'єр вже готує свій джетпак.');
+      notify('Замовлення прийнято! Очікуйте на доставку.', 'success');
       setCart([]);
       setIsCheckingOut(false);
       setIsCartOpen(false);
       setCheckoutForm({ name: '', phone: '', address: '', comment: '' });
+      setCheckoutErrors([]);
     } catch (err: any) {
-      alert('Помилка при оформленні: ' + err.message);
+      notify('Помилка при оформленні: ' + err.message, 'error');
     }
   };
 
@@ -180,26 +215,41 @@ export default function App() {
     try {
       await updateDoc(doc(db, 'orders', orderId), { status: newStatus });
       if (newStatus === 'cancelled') {
+        notify('Замовлення скасовано', 'info');
         setOrderIdToCancel(null);
+      } else {
+        notify(`Статус замовлення оновлено на: ${getStatusLabel(newStatus)}`, 'success');
       }
     } catch (err: any) {
-      alert('Помилка оновлення статусу: ' + err.message);
+      notify('Помилка оновлення статусу: ' + err.message, 'error');
     }
+  };
+
+  const validateLogin = () => {
+    const errors: string[] = [];
+    if (!email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) errors.push("Невірний формат email");
+    if (password.length < 6) errors.push("Пароль має бути не менше 6 символів");
+    setLoginErrors(errors);
+    return errors.length === 0;
   };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!validateLogin()) return;
     try {
       await signInWithEmailAndPassword(auth, email, password);
+      notify('Вхід успішний! Вітаємо, операторе.', 'success');
       setEmail('');
       setPassword('');
+      setLoginErrors([]);
     } catch (err: any) {
-      alert('Помилка входу: ' + err.message);
+      notify('Помилка входу: невірні дані', 'error');
     }
   };
 
   const handleLogout = () => {
     signOut(auth);
+    notify('Ви вийшли з системи', 'info');
     setCurrentView('MENU');
   };
 
@@ -213,16 +263,27 @@ export default function App() {
       const snapshot = await uploadBytes(storageRef, file);
       const url = await getDownloadURL(snapshot.ref);
       setNewDish(prev => ({ ...prev, image: url }));
+      notify('Фото завантажено успішно', 'success');
     } catch (err: any) {
-      alert('Помилка завантаження фото: ' + err.message);
+      notify('Помилка завантаження фото: ' + err.message, 'error');
     } finally {
       setUploadingImage(false);
     }
   };
 
+  const validateDish = () => {
+    const errors: string[] = [];
+    if (!newDish.name?.trim()) errors.push("Назва страви обов'язкова");
+    if (!newDish.price || newDish.price <= 0) errors.push("Ціна має бути більше 0");
+    if (!newDish.description?.trim()) errors.push("Опис обов'язковий");
+    if (!newDish.image) errors.push("Завантажте фото страви");
+    setDishErrors(errors);
+    return errors.length === 0;
+  };
+
   const handleSubmitDish = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newDish.image) return alert('Завантажте фото!');
+    if (!validateDish()) return;
     
     const ingredients = newDish.ingredientsInput?.split(',').map(i => i.trim()).filter(Boolean) || [];
     const dishData = {
@@ -238,26 +299,29 @@ export default function App() {
     try {
       if (editingDishId) {
         await updateDoc(doc(db, 'dishes', editingDishId), dishData);
-        alert('Страву оновлено!');
+        notify('Страву успішно оновлено', 'success');
       } else {
         await addDoc(collection(db, 'dishes'), dishData);
-        alert('Страву додано!');
+        notify('Страву додано до меню', 'success');
       }
       setEditingDishId(null);
       setNewDish({ name: '', description: '', price: 0, image: '', category: 'Основні страви', ingredientsInput: '' });
+      setDishErrors([]);
       setCurrentView('MENU');
     } catch (err: any) {
-      alert('Помилка збереження: ' + err.message);
+      notify('Помилка збереження: ' + err.message, 'error');
     }
   };
 
-  const deleteFromMenu = async (id: string) => {
-    if (!confirm('Видалити страву?')) return;
+  const deleteFromMenu = async () => {
+    if (!dishIdToDelete) return;
     try {
-      await deleteDoc(doc(db, 'dishes', id));
-      setCart(prev => prev.filter(item => item.id !== id));
+      await deleteDoc(doc(db, 'dishes', dishIdToDelete));
+      setCart(prev => prev.filter(item => item.id !== dishIdToDelete));
+      notify('Страву видалено з меню', 'info');
+      setDishIdToDelete(null);
     } catch (err: any) {
-      alert('Помилка видалення: ' + err.message);
+      notify('Помилка видалення: ' + err.message, 'error');
     }
   };
 
@@ -288,7 +352,6 @@ export default function App() {
       case 'delivery': return 'ДОСТАВЛЯЄТЬСЯ';
       case 'completed': return 'ЗАВЕРШЕНО';
       case 'cancelled': return 'СКАСОВАНО';
-      // Fix: cast 'status' to any to avoid 'never' type error when all union members are handled in the switch
       default: return (status as any).toUpperCase();
     }
   };
@@ -333,6 +396,28 @@ export default function App() {
           </div>
         </div>
       </nav>
+
+      {/* Notifications Layer */}
+      <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[200] space-y-3 pointer-events-none">
+        <AnimatePresence>
+          {notifications.map(n => (
+            <motion.div
+              key={n.id}
+              initial={{ opacity: 0, y: 50, scale: 0.8 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              className={`px-6 py-3 rounded-full flex items-center gap-3 border shadow-2xl backdrop-blur-xl min-w-[300px] pointer-events-auto ${
+                n.type === 'success' ? (isCyber ? 'bg-cyber-neon/10 border-cyber-neon text-cyber-neon' : 'bg-green-50 border-green-500 text-green-700') :
+                n.type === 'error' ? (isCyber ? 'bg-red-500/10 border-red-500 text-red-500' : 'bg-red-50 border-red-500 text-red-700') :
+                (isCyber ? 'bg-cyber-pink/10 border-cyber-pink text-cyber-pink' : 'bg-blue-50 border-blue-500 text-blue-700')
+              }`}
+            >
+              {n.type === 'success' ? <Check size={18} /> : n.type === 'error' ? <AlertTriangle size={18} /> : <InfoIcon size={18} />}
+              <span className="text-xs font-black uppercase tracking-wider">{n.message}</span>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
 
       <main className="pt-20">
         <AnimatePresence mode="wait">
@@ -379,14 +464,20 @@ export default function App() {
                 <div className={`max-w-md mx-auto p-8 rounded-3xl border ${cardStyles}`}>
                   <div className="text-center mb-8"><LogIn className="mx-auto mb-4" size={48} /><h2 className="text-2xl font-black">АДМІН-ВХІД</h2></div>
                   <form onSubmit={handleLogin} className="space-y-6">
-                    <input type="email" placeholder="Email" required value={email} onChange={e => setEmail(e.target.value)} className={`w-full p-4 rounded-xl outline-none ${isCyber ? 'bg-white/5 border-white/10 text-white' : 'bg-slate-50 border-slate-200'}`} />
-                    <input type="password" placeholder="Пароль" required value={password} onChange={e => setPassword(e.target.value)} className={`w-full p-4 rounded-xl outline-none ${isCyber ? 'bg-white/5 border-white/10 text-white' : 'bg-slate-50 border-slate-200'}`} />
+                    <input type="email" placeholder="Email" required value={email} onChange={e => {setEmail(e.target.value); setLoginErrors([]);}} className={`w-full p-4 rounded-xl outline-none ${isCyber ? 'bg-white/5 border-white/10 text-white' : 'bg-slate-50 border-slate-200'}`} />
+                    <input type="password" placeholder="Пароль" required value={password} onChange={e => {setPassword(e.target.value); setLoginErrors([]);}} className={`w-full p-4 rounded-xl outline-none ${isCyber ? 'bg-white/5 border-white/10 text-white' : 'bg-slate-50 border-slate-200'}`} />
+                    
+                    {loginErrors.length > 0 && (
+                      <div className="text-xs text-red-500 font-bold space-y-1 ml-2">
+                        {loginErrors.map((err, i) => <p key={i}>• {err}</p>)}
+                      </div>
+                    )}
+                    
                     <button type="submit" className={`w-full py-5 rounded-2xl font-black text-white ${buttonAccent}`}>УВІЙТИ</button>
                   </form>
                 </div>
               ) : (
                 <div className="space-y-12">
-                  {/* Admin Sub-navigation */}
                   <div className="flex justify-center mb-10">
                     <div className={`inline-flex p-1 rounded-2xl ${isCyber ? 'bg-white/5' : 'bg-slate-100'}`}>
                       <button 
@@ -416,14 +507,21 @@ export default function App() {
                             {uploadingImage ? <Zap className="animate-spin" /> : newDish.image ? <img src={newDish.image} className="w-full h-full object-cover" /> : <ImageIcon className="opacity-20" size={40} />}
                           </div>
                           <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
-                          <input required placeholder="Назва" type="text" value={newDish.name} onChange={e => setNewDish({...newDish, name: e.target.value})} className={`w-full p-4 rounded-xl outline-none ${isCyber ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`} />
+                          <input required placeholder="Назва" type="text" value={newDish.name} onChange={e => {setNewDish({...newDish, name: e.target.value}); setDishErrors([]);}} className={`w-full p-4 rounded-xl outline-none ${isCyber ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`} />
                           <div className="grid grid-cols-2 gap-4">
-                            <input required placeholder="Ціна" type="number" value={newDish.price || ''} onChange={e => setNewDish({...newDish, price: Number(e.target.value)})} className={`w-full p-4 rounded-xl outline-none ${isCyber ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`} />
+                            <input required placeholder="Ціна" type="number" value={newDish.price || ''} onChange={e => {setNewDish({...newDish, price: Number(e.target.value)}); setDishErrors([]);}} className={`w-full p-4 rounded-xl outline-none ${isCyber ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`} />
                             <select value={newDish.category} onChange={e => setNewDish({...newDish, category: e.target.value as Category})} className={`w-full p-4 rounded-xl outline-none ${isCyber ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`}>
                               {categories.filter(c => c !== 'Всі').map(c => <option key={c} value={c}>{c}</option>)}
                             </select>
                           </div>
-                          <textarea required placeholder="Опис" value={newDish.description} onChange={e => setNewDish({...newDish, description: e.target.value})} className={`w-full p-4 rounded-xl outline-none h-24 ${isCyber ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`} />
+                          <textarea required placeholder="Опис" value={newDish.description} onChange={e => {setNewDish({...newDish, description: e.target.value}); setDishErrors([]);}} className={`w-full p-4 rounded-xl outline-none h-24 ${isCyber ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`} />
+                          
+                          {dishErrors.length > 0 && (
+                            <div className="text-xs text-red-500 font-bold space-y-1 ml-2">
+                              {dishErrors.map((err, i) => <p key={i}>• {err}</p>)}
+                            </div>
+                          )}
+
                           <button type="submit" className={`w-full py-5 rounded-2xl font-black text-white ${buttonAccent}`}>{editingDishId ? 'ОНОВИТИ' : 'ЗБЕРЕГТИ'}</button>
                         </form>
                       </div>
@@ -438,7 +536,7 @@ export default function App() {
                                 <p className="text-xs opacity-50">{dish.price} ₴</p>
                               </div>
                               <button onClick={() => { setEditingDishId(dish.id); setNewDish({ ...dish, ingredientsInput: dish.ingredients.join(', ') }); }} className="p-2 text-cyber-neon"><Edit2 size={18} /></button>
-                              <button onClick={() => deleteFromMenu(dish.id)} className="p-2 text-red-500"><Trash2 size={18} /></button>
+                              <button onClick={() => setDishIdToDelete(dish.id)} className="p-2 text-red-500"><Trash2 size={18} /></button>
                             </div>
                           ))}
                         </div>
@@ -525,11 +623,11 @@ export default function App() {
         </AnimatePresence>
       </main>
 
-      {/* Cancel Order Confirmation Modal */}
+      {/* Confirmation Modals Layer */}
       <AnimatePresence>
-        {orderIdToCancel && (
+        {(orderIdToCancel || dishIdToDelete) && (
           <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setOrderIdToCancel(null)} className="fixed inset-0 bg-black/80 backdrop-blur-md z-[150]" />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => {setOrderIdToCancel(null); setDishIdToDelete(null);}} className="fixed inset-0 bg-black/80 backdrop-blur-md z-[150]" />
             <div className="fixed inset-0 z-[160] flex items-center justify-center p-4">
               <motion.div 
                 initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}
@@ -540,12 +638,26 @@ export default function App() {
                     <AlertTriangle size={48} />
                   </div>
                 </div>
-                <h3 className="text-xl font-black mb-4 uppercase tracking-tighter">СКАСУВАТИ ЗАМОВЛЕННЯ?</h3>
-                <p className="text-sm opacity-60 mb-8 leading-relaxed">Ви дійсно хочете скасувати замовлення #{orderIdToCancel.slice(-4).toUpperCase()}? Цю дію неможливо буде відмінити.</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <button onClick={() => setOrderIdToCancel(null)} className={`py-4 rounded-xl font-black text-xs uppercase tracking-widest border transition-all ${isCyber ? 'border-white/10 text-gray-400 hover:text-white' : 'border-slate-200 text-slate-500'}`}>НІ, НАЗАД</button>
-                  <button onClick={() => updateOrderStatus(orderIdToCancel, 'cancelled')} className="py-4 bg-red-600 text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-xl shadow-red-600/20">ТАК, СКАСУВАТИ</button>
-                </div>
+                
+                {orderIdToCancel ? (
+                  <>
+                    <h3 className="text-xl font-black mb-4 uppercase tracking-tighter">СКАСУВАТИ ЗАМОВЛЕННЯ?</h3>
+                    <p className="text-sm opacity-60 mb-8 leading-relaxed">Ви дійсно хочете скасувати замовлення #{orderIdToCancel.slice(-4).toUpperCase()}? Цю дію неможливо буде відмінити.</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button onClick={() => setOrderIdToCancel(null)} className={`py-4 rounded-xl font-black text-xs uppercase tracking-widest border transition-all ${isCyber ? 'border-white/10 text-gray-400 hover:text-white' : 'border-slate-200 text-slate-500'}`}>НІ, НАЗАД</button>
+                      <button onClick={() => updateOrderStatus(orderIdToCancel, 'cancelled')} className="py-4 bg-red-600 text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-xl shadow-red-600/20">ТАК, СКАСУВАТИ</button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <h3 className="text-xl font-black mb-4 uppercase tracking-tighter">ВИДАЛИТИ СТРАВУ?</h3>
+                    <p className="text-sm opacity-60 mb-8 leading-relaxed">Ця страва назавжди зникне з меню цифрового простору.</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button onClick={() => setDishIdToDelete(null)} className={`py-4 rounded-xl font-black text-xs uppercase tracking-widest border transition-all ${isCyber ? 'border-white/10 text-gray-400 hover:text-white' : 'border-slate-200 text-slate-500'}`}>НІ, НАЗАД</button>
+                      <button onClick={deleteFromMenu} className="py-4 bg-red-600 text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-xl shadow-red-600/20">ТАК, ВИДАЛИТИ</button>
+                    </div>
+                  </>
+                )}
               </motion.div>
             </div>
           </>
@@ -620,7 +732,7 @@ export default function App() {
                         required 
                         placeholder="Ваше ім'я" 
                         value={checkoutForm.name} 
-                        onChange={e => setCheckoutForm({...checkoutForm, name: e.target.value})}
+                        onChange={e => {setCheckoutForm({...checkoutForm, name: e.target.value}); setCheckoutErrors([]);}}
                         className={`w-full p-4 rounded-2xl outline-none transition-all ${isCyber ? 'bg-white/5 border border-white/10 focus:border-cyber-neon text-white' : 'bg-slate-50 border border-slate-200 focus:border-purple-500'}`}
                       />
                     </div>
@@ -629,9 +741,9 @@ export default function App() {
                       <input 
                         required 
                         type="tel"
-                        placeholder="+380" 
+                        placeholder="+380XXXXXXXXX" 
                         value={checkoutForm.phone} 
-                        onChange={e => setCheckoutForm({...checkoutForm, phone: e.target.value})}
+                        onChange={e => {setCheckoutForm({...checkoutForm, phone: e.target.value}); setCheckoutErrors([]);}}
                         className={`w-full p-4 rounded-2xl outline-none transition-all ${isCyber ? 'bg-white/5 border border-white/10 focus:border-cyber-neon text-white' : 'bg-slate-50 border border-slate-200 focus:border-purple-500'}`}
                       />
                     </div>
@@ -641,7 +753,7 @@ export default function App() {
                         required 
                         placeholder="Вулиця, будинок, кв." 
                         value={checkoutForm.address} 
-                        onChange={e => setCheckoutForm({...checkoutForm, address: e.target.value})}
+                        onChange={e => {setCheckoutForm({...checkoutForm, address: e.target.value}); setCheckoutErrors([]);}}
                         className={`w-full p-4 rounded-2xl outline-none transition-all ${isCyber ? 'bg-white/5 border border-white/10 focus:border-cyber-neon text-white' : 'bg-slate-50 border border-slate-200 focus:border-purple-500'}`}
                       />
                     </div>
@@ -654,6 +766,12 @@ export default function App() {
                         className={`w-full p-4 rounded-2xl outline-none h-24 resize-none transition-all ${isCyber ? 'bg-white/5 border border-white/10 focus:border-cyber-neon text-white' : 'bg-slate-50 border border-slate-200 focus:border-purple-500'}`}
                       />
                     </div>
+
+                    {checkoutErrors.length > 0 && (
+                      <div className="text-xs text-red-500 font-bold space-y-1 ml-2">
+                        {checkoutErrors.map((err, i) => <p key={i}>• {err}</p>)}
+                      </div>
+                    )}
                   </form>
                 )}
               </div>
@@ -690,7 +808,7 @@ export default function App() {
       </AnimatePresence>
 
       <footer className={`py-12 border-t text-center ${isCyber ? 'bg-cyber-dark border-white/5 text-gray-600' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
-        <p className="text-[10px] md:text-xs uppercase font-black tracking-[0.3em] md:tracking-[0.5em] mb-2 px-4">Cyber-Goose Protocol v7.2.0</p>
+        <p className="text-[10px] md:text-xs uppercase font-black tracking-[0.3em] md:tracking-[0.5em] mb-2 px-4">Cyber-Goose Protocol v7.3.0</p>
         <p className="text-[10px] md:text-sm">© 2077 Нео-Київ | Гусочка. Захищено кібер-щитом.</p>
       </footer>
     </div>
