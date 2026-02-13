@@ -6,6 +6,7 @@ export interface Dish {
   price: number;
   image: string;
   category: string;
+  ingredients: string[];
 }
 
 export interface CartItem extends Dish {
