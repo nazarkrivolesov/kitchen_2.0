@@ -439,12 +439,12 @@ export default function App() {
           
           <div className="flex items-center gap-2 md:gap-4">
             <button onClick={() => setActiveTheme(isCyber ? 'RAINBOW' : 'CYBER')} className={`p-2 rounded-full border transition-all ${isCyber ? 'border-cyber-pink text-cyber-pink hover:bg-cyber-pink/20' : 'border-purple-200 text-purple-600 hover:bg-purple-50'}`}>
-              <Palette size={20} />
+              <Palette size={22} />
             </button>
             
             {isAdmin && (
-              <button onClick={() => { setCurrentView(currentView === 'MENU' ? 'ADMIN' : 'MENU'); setEditingDishId(null); }} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all text-[10px] md:text-xs font-bold uppercase tracking-widest ${currentView === 'ADMIN' ? 'bg-cyber-pink text-white border-cyber-pink shadow-lg' : isCyber ? 'border-white/20 text-gray-400 hover:text-white' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
-                {currentView === 'ADMIN' ? <ArrowLeft size={16} /> : <Settings size={16} />}
+              <button onClick={() => { setCurrentView(currentView === 'MENU' ? 'ADMIN' : 'MENU'); setEditingDishId(null); }} className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all text-[10px] md:text-xs font-bold uppercase tracking-widest ${currentView === 'ADMIN' ? 'bg-cyber-pink text-white border-cyber-pink shadow-lg' : isCyber ? 'border-white/20 text-gray-400 hover:text-white' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
+                {currentView === 'ADMIN' ? <ArrowLeft size={22} /> : <Settings size={22} />}
                 <span className="hidden sm:inline">{currentView === 'ADMIN' ? 'На головну' : 'Адмін'}</span>
               </button>
             )}
@@ -456,10 +456,11 @@ export default function App() {
             )}
 
             {user ? (
-              <button onClick={handleLogout} className="p-2 text-red-500 hover:bg-red-50 rounded-full transition-all"><LogOut size={20} /></button>
+              /* Для адміна кнопка виходу тепер всередині панелі, для клієнта залишаємо в хедері */
+              !isAdmin && <button onClick={handleLogout} className="p-2 text-red-500 hover:bg-red-50 rounded-full transition-all"><LogOut size={22} /></button>
             ) : (
               <button onClick={() => setIsAuthModalOpen(true)} className={`p-2 rounded-full border transition-all ${isCyber ? 'border-cyber-neon text-cyber-neon hover:bg-cyber-neon/10' : 'border-slate-900 text-slate-900'}`}>
-                <LogIn size={20} />
+                <LogIn size={22} />
               </button>
             )}
 
@@ -546,7 +547,7 @@ export default function App() {
                  </div>
               ) : (
                 <div className="space-y-12">
-                  <div className="flex justify-center mb-10">
+                  <div className="flex flex-col md:flex-row items-center justify-center gap-4 mb-10">
                     <div className={`inline-flex p-1 rounded-2xl ${isCyber ? 'bg-white/5' : 'bg-slate-100'}`}>
                       <button 
                         onClick={() => setAdminTab('MENU')}
@@ -564,6 +565,10 @@ export default function App() {
                         )}
                       </button>
                     </div>
+                    {/* Кнопка виходу для адміна перенесена сюди */}
+                    <button onClick={handleLogout} className="px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest flex items-center gap-2 text-red-500 border border-red-500/20 hover:bg-red-500/10 transition-all">
+                      <LogOut size={18} /> Вийти з системи
+                    </button>
                   </div>
 
                   {adminTab === 'MENU' ? (
@@ -575,14 +580,14 @@ export default function App() {
                             {uploadingImage ? <Zap className="animate-spin" /> : newDish.image ? <img src={newDish.image} className="w-full h-full object-cover" /> : <ImageIcon className="opacity-20" size={40} />}
                           </div>
                           <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
-                          <input required placeholder="Назва" type="text" value={newDish.name} onChange={e => {setNewDish({...newDish, name: e.target.value}); setDishErrors([]);}} className={`w-full p-4 rounded-xl outline-none ${isCyber ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`} />
+                          <input required placeholder="Назва" type="text" value={newDish.name} onChange={e => {setNewDish({...newDish, name: e.target.value}); setDishErrors([]);}} className={`w-full p-4 rounded-xl outline-none ${isCyber ? 'bg-white/5 border-white/10 text-white' : 'bg-slate-50 border border-slate-200'}`} />
                           <div className="grid grid-cols-2 gap-4">
-                            <input required placeholder="Ціна" type="number" value={newDish.price || ''} onChange={e => {setNewDish({...newDish, price: Number(e.target.value)}); setDishErrors([]);}} className={`w-full p-4 rounded-xl outline-none ${isCyber ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`} />
-                            <select value={newDish.category} onChange={e => setNewDish({...newDish, category: e.target.value as Category})} className={`w-full p-4 rounded-xl outline-none ${isCyber ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`}>
+                            <input required placeholder="Ціна" type="number" value={newDish.price || ''} onChange={e => {setNewDish({...newDish, price: Number(e.target.value)}); setDishErrors([]);}} className={`w-full p-4 rounded-xl outline-none ${isCyber ? 'bg-white/5 border-white/10 text-white' : 'bg-slate-50 border border-slate-200'}`} />
+                            <select value={newDish.category} onChange={e => setNewDish({...newDish, category: e.target.value as Category})} className={`w-full p-4 rounded-xl outline-none ${isCyber ? 'bg-white/5 border-white/10 text-white' : 'bg-slate-50 border border-slate-200'}`}>
                               {categories.filter(c => c !== 'Всі').map(c => <option key={c} value={c}>{c}</option>)}
                             </select>
                           </div>
-                          <textarea required placeholder="Опис" value={newDish.description} onChange={e => {setNewDish({...newDish, description: e.target.value}); setDishErrors([]);}} className={`w-full p-4 rounded-xl outline-none h-24 ${isCyber ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`} />
+                          <textarea required placeholder="Опис" value={newDish.description} onChange={e => {setNewDish({...newDish, description: e.target.value}); setDishErrors([]);}} className={`w-full p-4 rounded-xl outline-none h-24 ${isCyber ? 'bg-white/5 border-white/10 text-white' : 'bg-slate-50 border border-slate-200'}`} />
                           
                           {dishErrors.length > 0 && (
                             <div className="text-xs text-red-500 font-bold space-y-1 ml-2">
