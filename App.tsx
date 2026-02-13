@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ShoppingCart, Plus, Minus, X, Settings, Utensils, Trash2, 
   Zap, Flame, Palette, ArrowLeft, ShoppingBag, Sparkles, 
-  Image as ImageIcon, Info, Clock, Edit2, LogOut, LogIn
+  Image as ImageIcon, Info, Clock, Edit2, LogOut, LogIn,
+  ClipboardList, Package, Truck, CheckCircle, Ban, User, Phone, MapPin, MessageSquare
 } from 'lucide-react';
 import { 
   collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, 
@@ -14,7 +15,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import * as firebaseAuth from 'firebase/auth';
 const { onAuthStateChanged, signInWithEmailAndPassword, signOut } = firebaseAuth as any;
 import { db, auth, storage } from './firebase';
-import { Dish, CartItem, Category } from './types';
+import { Dish, CartItem, Category, Order, OrderStatus } from './types';
 
 // Fix: Define User type as any to avoid import issues from firebase/auth
 type User = any;
@@ -23,17 +24,29 @@ export default function App() {
   const [menu, setMenu] = useState<Dish[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [currentView, setCurrentView] = useState<'MENU' | 'ADMIN'>('MENU');
+  const [adminTab, setAdminTab] = useState<'MENU' | 'ORDERS'>('MENU');
   const [activeTheme, setActiveTheme] = useState<'CYBER' | 'RAINBOW'>('CYBER');
   const [activeCategory, setActiveCategory] = useState<Category | 'Всі'>('Всі');
   const [selectedDish, setSelectedDish] = useState<Dish | null>(null);
   const [editingDishId, setEditingDishId] = useState<string | null>(null);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
+  // Checkout Form State
+  const [checkoutForm, setCheckoutForm] = useState({
+    name: '',
+    phone: '',
+    address: '',
+    comment: ''
+  });
+
+  // Admin Form State
   const [newDish, setNewDish] = useState<Partial<Dish> & { ingredientsInput: string }>({
     name: '',
     description: '',
@@ -53,6 +66,7 @@ export default function App() {
     return unsub;
   }, []);
 
+  // Sync Menu
   useEffect(() => {
     const q = query(collection(db, 'dishes'), orderBy('createdAt', 'desc'));
     const unsub = onSnapshot(q, (snapshot) => {
@@ -64,6 +78,21 @@ export default function App() {
     });
     return unsub;
   }, []);
+
+  // Sync Orders
+  useEffect(() => {
+    if (user && currentView === 'ADMIN') {
+      const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
+      const unsub = onSnapshot(q, (snapshot) => {
+        const items = snapshot.docs.map(d => ({ 
+          id: d.id, 
+          ...d.data() 
+        } as Order));
+        setOrders(items);
+      });
+      return unsub;
+    }
+  }, [user, currentView]);
 
   useEffect(() => {
     if (activeTheme === 'CYBER') {
@@ -111,6 +140,42 @@ export default function App() {
 
   const removeFromCart = (id: string) => {
     setCart(prev => prev.filter(item => item.id !== id));
+  };
+
+  const handlePlaceOrder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!checkoutForm.name || !checkoutForm.phone || !checkoutForm.address) {
+      alert('Будь ласка, заповніть обов\'язкові поля');
+      return;
+    }
+
+    const orderTotal = cart.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+    const orderData = {
+      customer: checkoutForm,
+      items: cart,
+      total: orderTotal,
+      status: 'new' as OrderStatus,
+      createdAt: serverTimestamp()
+    };
+
+    try {
+      await addDoc(collection(db, 'orders'), orderData);
+      alert('Замовлення успішно розміщене! Наш кур\'єр вже готує свій джетпак.');
+      setCart([]);
+      setIsCheckingOut(false);
+      setIsCartOpen(false);
+      setCheckoutForm({ name: '', phone: '', address: '', comment: '' });
+    } catch (err: any) {
+      alert('Помилка при оформленні: ' + err.message);
+    }
+  };
+
+  const updateOrderStatus = async (orderId: string, newStatus: OrderStatus) => {
+    try {
+      await updateDoc(doc(db, 'orders', orderId), { status: newStatus });
+    } catch (err: any) {
+      alert('Помилка оновлення статусу: ' + err.message);
+    }
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -196,6 +261,29 @@ export default function App() {
   const cardStyles = isCyber ? 'bg-cyber-dark border-white/10 rounded-none' : 'bg-white border-2 border-slate-100 rounded-3xl shadow-xl shadow-slate-200/50';
   const navStyles = isCyber ? 'bg-cyber-bg/90 border-cyber-neon/30' : 'bg-white/90 border-slate-200 shadow-lg';
 
+  const getStatusColor = (status: OrderStatus) => {
+    switch (status) {
+      case 'new': return 'text-cyber-neon border-cyber-neon/50 bg-cyber-neon/5';
+      case 'cooking': return 'text-orange-400 border-orange-400/50 bg-orange-400/5';
+      case 'delivery': return 'text-blue-400 border-blue-400/50 bg-blue-400/5';
+      case 'completed': return 'text-gray-400 border-gray-400/50 bg-gray-400/5';
+      case 'cancelled': return 'text-red-500 border-red-500/50 bg-red-500/5';
+      default: return 'text-white';
+    }
+  };
+
+  const getStatusLabel = (status: OrderStatus) => {
+    switch (status) {
+      case 'new': return 'НОВЕ';
+      case 'cooking': return 'ГОТУЄТЬСЯ';
+      case 'delivery': return 'ДОСТАВЛЯЄТЬСЯ';
+      case 'completed': return 'ЗАВЕРШЕНО';
+      case 'cancelled': return 'СКАСОВАНО';
+      // Fix: cast 'status' to any to avoid 'never' type error when all union members are handled in the switch
+      default: return (status as any).toUpperCase();
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-cyber-bg text-cyber-neon font-cyber">
@@ -226,7 +314,7 @@ export default function App() {
               <button onClick={handleLogout} className="p-2 text-red-500 hover:bg-red-50 rounded-full transition-all"><LogOut size={20} /></button>
             )}
             {currentView === 'MENU' && (
-              <button onClick={() => setIsCartOpen(true)} className={`relative p-2 rounded-full border transition-all ${isCyber ? 'border-cyber-neon text-cyber-neon hover:bg-cyber-neon/10' : 'border-slate-900 text-slate-900 bg-slate-900 text-white'}`}>
+              <button onClick={() => { setIsCartOpen(true); setIsCheckingOut(false); }} className={`relative p-2 rounded-full border transition-all ${isCyber ? 'border-cyber-neon text-cyber-neon hover:bg-cyber-neon/10' : 'border-slate-900 text-slate-900 bg-slate-900 text-white'}`}>
                 <ShoppingCart size={22} />
                 {cartItemCount > 0 && (
                   <span className={`absolute -top-1 -right-1 text-white text-[10px] w-5 h-5 flex items-center justify-center rounded-full font-bold shadow-lg ${isCyber ? 'bg-cyber-pink' : 'bg-red-500'}`}>{cartItemCount}</span>
@@ -277,7 +365,7 @@ export default function App() {
               </section>
             </motion.div>
           ) : (
-            <motion.div key="admin-view" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="max-w-6xl mx-auto px-4 py-16">
+            <motion.div key="admin-view" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="max-w-7xl mx-auto px-4 py-16">
               {!user ? (
                 <div className={`max-w-md mx-auto p-8 rounded-3xl border ${cardStyles}`}>
                   <div className="text-center mb-8"><LogIn className="mx-auto mb-4" size={48} /><h2 className="text-2xl font-black">АДМІН-ВХІД</h2></div>
@@ -288,41 +376,141 @@ export default function App() {
                   </form>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 text-left">
-                  <div className={`lg:col-span-5 p-8 rounded-3xl border ${cardStyles}`}>
-                    <h3 className="text-xl font-black mb-8">{editingDishId ? 'РЕДАГУВАННЯ' : 'НОВА СТРАВА'}</h3>
-                    <form onSubmit={handleSubmitDish} className="space-y-6">
-                      <div onClick={() => !uploadingImage && fileInputRef.current?.click()} className={`relative h-40 rounded-2xl border-2 border-dashed flex items-center justify-center cursor-pointer overflow-hidden ${isCyber ? 'border-white/10 bg-white/5' : 'border-slate-200 bg-slate-50'}`}>
-                        {uploadingImage ? <Zap className="animate-spin" /> : newDish.image ? <img src={newDish.image} className="w-full h-full object-cover" /> : <ImageIcon className="opacity-20" size={40} />}
-                      </div>
-                      <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
-                      <input required placeholder="Назва" type="text" value={newDish.name} onChange={e => setNewDish({...newDish, name: e.target.value})} className={`w-full p-4 rounded-xl outline-none ${isCyber ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`} />
-                      <div className="grid grid-cols-2 gap-4">
-                        <input required placeholder="Ціна" type="number" value={newDish.price || ''} onChange={e => setNewDish({...newDish, price: Number(e.target.value)})} className={`w-full p-4 rounded-xl outline-none ${isCyber ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`} />
-                        <select value={newDish.category} onChange={e => setNewDish({...newDish, category: e.target.value as Category})} className={`w-full p-4 rounded-xl outline-none ${isCyber ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`}>
-                          {categories.filter(c => c !== 'Всі').map(c => <option key={c} value={c}>{c}</option>)}
-                        </select>
-                      </div>
-                      <textarea required placeholder="Опис" value={newDish.description} onChange={e => setNewDish({...newDish, description: e.target.value})} className={`w-full p-4 rounded-xl outline-none h-24 ${isCyber ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`} />
-                      <button type="submit" className={`w-full py-5 rounded-2xl font-black text-white ${buttonAccent}`}>{editingDishId ? 'ОНОВИТИ' : 'ЗБЕРЕГТИ'}</button>
-                    </form>
-                  </div>
-                  <div className="lg:col-span-7 space-y-4">
-                    <h3 className="text-xl font-black mb-6 uppercase tracking-widest">Меню</h3>
-                    <div className="grid gap-3 max-h-[600px] overflow-y-auto pr-2 custom-scroll">
-                      {menu.map(dish => (
-                        <div key={dish.id} className={`p-4 rounded-2xl border flex items-center gap-4 ${isCyber ? 'bg-white/5 border-white/5' : 'bg-white border-slate-100'}`}>
-                          <img src={dish.image} className="w-16 h-16 rounded-xl object-cover" />
-                          <div className="flex-grow">
-                            <h4 className="font-bold text-sm">{dish.name}</h4>
-                            <p className="text-xs opacity-50">{dish.price} ₴</p>
-                          </div>
-                          <button onClick={() => { setEditingDishId(dish.id); setNewDish({ ...dish, ingredientsInput: dish.ingredients.join(', ') }); }} className="p-2 text-cyber-neon"><Edit2 size={18} /></button>
-                          <button onClick={() => deleteFromMenu(dish.id)} className="p-2 text-red-500"><Trash2 size={18} /></button>
-                        </div>
-                      ))}
+                <div className="space-y-12">
+                  {/* Admin Sub-navigation */}
+                  <div className="flex justify-center mb-10">
+                    <div className={`inline-flex p-1 rounded-2xl ${isCyber ? 'bg-white/5' : 'bg-slate-100'}`}>
+                      <button 
+                        onClick={() => setAdminTab('MENU')}
+                        className={`px-8 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all flex items-center gap-2 ${adminTab === 'MENU' ? buttonAccent + ' text-white' : 'text-gray-400'}`}
+                      >
+                        <Utensils size={18} /> Меню
+                      </button>
+                      <button 
+                        onClick={() => setAdminTab('ORDERS')}
+                        className={`px-8 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all flex items-center gap-2 ${adminTab === 'ORDERS' ? buttonAccent + ' text-white' : 'text-gray-400'}`}
+                      >
+                        <ClipboardList size={18} /> Замовлення
+                        {orders.filter(o => o.status === 'new').length > 0 && (
+                          <span className="w-5 h-5 bg-cyber-neon text-cyber-bg rounded-full flex items-center justify-center text-[10px] font-black">{orders.filter(o => o.status === 'new').length}</span>
+                        )}
+                      </button>
                     </div>
                   </div>
+
+                  {adminTab === 'MENU' ? (
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 text-left">
+                      <div className={`lg:col-span-5 p-8 rounded-3xl border ${cardStyles}`}>
+                        <h3 className="text-xl font-black mb-8">{editingDishId ? 'РЕДАГУВАННЯ' : 'НОВА СТРАВА'}</h3>
+                        <form onSubmit={handleSubmitDish} className="space-y-6">
+                          <div onClick={() => !uploadingImage && fileInputRef.current?.click()} className={`relative h-40 rounded-2xl border-2 border-dashed flex items-center justify-center cursor-pointer overflow-hidden ${isCyber ? 'border-white/10 bg-white/5' : 'border-slate-200 bg-slate-50'}`}>
+                            {uploadingImage ? <Zap className="animate-spin" /> : newDish.image ? <img src={newDish.image} className="w-full h-full object-cover" /> : <ImageIcon className="opacity-20" size={40} />}
+                          </div>
+                          <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
+                          <input required placeholder="Назва" type="text" value={newDish.name} onChange={e => setNewDish({...newDish, name: e.target.value})} className={`w-full p-4 rounded-xl outline-none ${isCyber ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`} />
+                          <div className="grid grid-cols-2 gap-4">
+                            <input required placeholder="Ціна" type="number" value={newDish.price || ''} onChange={e => setNewDish({...newDish, price: Number(e.target.value)})} className={`w-full p-4 rounded-xl outline-none ${isCyber ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`} />
+                            <select value={newDish.category} onChange={e => setNewDish({...newDish, category: e.target.value as Category})} className={`w-full p-4 rounded-xl outline-none ${isCyber ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`}>
+                              {categories.filter(c => c !== 'Всі').map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                          </div>
+                          <textarea required placeholder="Опис" value={newDish.description} onChange={e => setNewDish({...newDish, description: e.target.value})} className={`w-full p-4 rounded-xl outline-none h-24 ${isCyber ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`} />
+                          <button type="submit" className={`w-full py-5 rounded-2xl font-black text-white ${buttonAccent}`}>{editingDishId ? 'ОНОВИТИ' : 'ЗБЕРЕГТИ'}</button>
+                        </form>
+                      </div>
+                      <div className="lg:col-span-7 space-y-4">
+                        <h3 className="text-xl font-black mb-6 uppercase tracking-widest">Меню</h3>
+                        <div className="grid gap-3 max-h-[600px] overflow-y-auto pr-2 custom-scroll">
+                          {menu.map(dish => (
+                            <div key={dish.id} className={`p-4 rounded-2xl border flex items-center gap-4 ${isCyber ? 'bg-white/5 border-white/5' : 'bg-white border-slate-100'}`}>
+                              <img src={dish.image} className="w-16 h-16 rounded-xl object-cover" />
+                              <div className="flex-grow">
+                                <h4 className="font-bold text-sm">{dish.name}</h4>
+                                <p className="text-xs opacity-50">{dish.price} ₴</p>
+                              </div>
+                              <button onClick={() => { setEditingDishId(dish.id); setNewDish({ ...dish, ingredientsInput: dish.ingredients.join(', ') }); }} className="p-2 text-cyber-neon"><Edit2 size={18} /></button>
+                              <button onClick={() => deleteFromMenu(dish.id)} className="p-2 text-red-500"><Trash2 size={18} /></button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 text-left">
+                      {orders.map((order) => (
+                        <motion.div 
+                          key={order.id} 
+                          layout
+                          animate={order.status === 'new' ? { scale: [1, 1.01, 1], boxShadow: isCyber ? ["0 0 0px #39FF14", "0 0 15px #39FF14", "0 0 0px #39FF14"] : "none" } : {}}
+                          transition={{ repeat: Infinity, duration: 2 }}
+                          className={`p-6 rounded-3xl border flex flex-col gap-6 ${cardStyles} ${order.status === 'completed' ? 'opacity-60 grayscale' : ''}`}
+                        >
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <div className={`px-3 py-1 rounded-full border text-[10px] font-black inline-block mb-3 ${getStatusColor(order.status)}`}>
+                                {getStatusLabel(order.status)}
+                              </div>
+                              <h4 className="font-black text-lg">Замовлення #{order.id.slice(-4).toUpperCase()}</h4>
+                              <p className="text-xs opacity-50">{order.createdAt?.toDate().toLocaleString('uk-UA')}</p>
+                            </div>
+                            <div className="text-right">
+                              <span className={`text-xl font-black ${isCyber ? 'text-cyber-neon' : 'text-slate-900'}`}>{order.total} ₴</span>
+                            </div>
+                          </div>
+
+                          <div className="space-y-2 py-4 border-y border-white/5">
+                            {order.items.map((item, idx) => (
+                              <div key={idx} className="flex justify-between text-sm">
+                                <span className="opacity-80">{item.name} <span className="font-black">x{item.quantity}</span></span>
+                                <span className="font-bold">{item.price * item.quantity} ₴</span>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="space-y-3 text-sm">
+                            <div className="flex items-center gap-2"><User size={14} className="opacity-50" /> <span className="font-bold">{order.customer.name}</span></div>
+                            <div className="flex items-center gap-2"><Phone size={14} className="opacity-50" /> <span className="opacity-80">{order.customer.phone}</span></div>
+                            <div className="flex items-center gap-2"><MapPin size={14} className="opacity-50" /> <span className="opacity-80">{order.customer.address}</span></div>
+                            {order.customer.comment && (
+                              <div className="flex items-start gap-2 italic text-xs opacity-60">
+                                <MessageSquare size={14} className="mt-0.5" /> 
+                                <span>"{order.customer.comment}"</span>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="mt-auto pt-4 grid grid-cols-2 gap-2">
+                            {order.status === 'new' && (
+                              <button onClick={() => updateOrderStatus(order.id, 'cooking')} className="col-span-2 py-3 bg-cyber-neon text-cyber-bg font-black rounded-xl text-xs flex items-center justify-center gap-2">
+                                <Package size={16} /> ПРИЙНЯТИ В РОБОТУ
+                              </button>
+                            )}
+                            {order.status === 'cooking' && (
+                              <button onClick={() => updateOrderStatus(order.id, 'delivery')} className="col-span-2 py-3 bg-blue-400 text-white font-black rounded-xl text-xs flex items-center justify-center gap-2">
+                                <Truck size={16} /> НА ДОСТАВКУ
+                              </button>
+                            )}
+                            {order.status === 'delivery' && (
+                              <button onClick={() => updateOrderStatus(order.id, 'completed')} className="col-span-2 py-3 bg-green-500 text-white font-black rounded-xl text-xs flex items-center justify-center gap-2">
+                                <CheckCircle size={16} /> ЗАВЕРШИТИ
+                              </button>
+                            )}
+                            {(order.status === 'new' || order.status === 'cooking') && (
+                              <button onClick={() => updateOrderStatus(order.id, 'cancelled')} className="col-span-2 py-2 text-red-500 border border-red-500/30 rounded-xl text-[10px] font-black hover:bg-red-500/5">
+                                СКАСУВАТИ
+                              </button>
+                            )}
+                          </div>
+                        </motion.div>
+                      ))}
+                      {orders.length === 0 && (
+                        <div className="col-span-full py-20 text-center opacity-20">
+                          <Package size={64} className="mx-auto mb-4" />
+                          <p className="font-black uppercase tracking-widest">Замовлень немає</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </motion.div>
@@ -353,38 +541,122 @@ export default function App() {
         {isCartOpen && (
           <>
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsCartOpen(false)} className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60]" />
-            <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} className={`fixed right-0 top-0 h-full w-full max-w-md z-[70] flex flex-col ${isCyber ? 'bg-cyber-dark text-white' : 'bg-white text-slate-900'}`}>
+            <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} className={`fixed right-0 top-0 h-full w-full max-w-md z-[70] flex flex-col shadow-2xl ${isCyber ? 'bg-cyber-dark text-white border-l border-white/10' : 'bg-white text-slate-900'}`}>
               <div className="p-6 border-b flex items-center justify-between border-white/10">
-                <h3 className="text-xl font-black">КОШИК</h3>
+                <div className="flex items-center gap-3">
+                  {isCheckingOut && <button onClick={() => setIsCheckingOut(false)} className="p-2 hover:bg-white/5 rounded-full"><ArrowLeft size={20} /></button>}
+                  <h3 className="text-xl font-black">{isCheckingOut ? 'ОФОРМЛЕННЯ' : 'КОШИК'}</h3>
+                </div>
                 <button onClick={() => setIsCartOpen(false)}><X size={32} /></button>
               </div>
-              <div className="flex-grow overflow-y-auto p-6 space-y-6">
-                {cart.length === 0 ? <p className="opacity-20 text-center py-20 font-black">ПОРОЖНЬО</p> : cart.map(item => (
-                  <div key={item.id} className="flex gap-4">
-                    <img src={item.image} className="w-16 h-16 rounded-xl object-cover" />
-                    <div className="flex-grow text-left">
-                      <h4 className="font-bold text-sm">{item.name}</h4>
-                      <p className="text-xs opacity-50">{item.price} ₴</p>
-                      <div className="flex items-center gap-4 mt-2">
-                        <button onClick={() => updateQuantity(item.id, -1)} className="p-1"><Minus size={14}/></button>
-                        <span className="font-black">{item.quantity}</span>
-                        <button onClick={() => updateQuantity(item.id, 1)} className="p-1"><Plus size={14}/></button>
-                        <button onClick={() => removeFromCart(item.id)} className="ml-auto text-red-500"><Trash2 size={16}/></button>
+              
+              <div className="flex-grow overflow-y-auto p-6 space-y-6 custom-scroll">
+                {!isCheckingOut ? (
+                  <>
+                    {cart.length === 0 ? (
+                      <div className="h-full flex flex-col items-center justify-center opacity-20 py-20">
+                        <Utensils size={64} className="mb-4" />
+                        <p className="font-black uppercase tracking-widest">ПОРОЖНЬО</p>
                       </div>
+                    ) : (
+                      cart.map(item => (
+                        <div key={item.id} className="flex gap-4 p-2 rounded-2xl transition-all hover:bg-white/5">
+                          <img src={item.image} className="w-20 h-20 rounded-xl object-cover" />
+                          <div className="flex-grow text-left">
+                            <h4 className="font-bold text-sm truncate">{item.name}</h4>
+                            <p className={`font-black text-sm ${isCyber ? 'text-cyber-neon' : 'text-purple-600'}`}>{item.price} ₴</p>
+                            <div className="flex items-center gap-4 mt-3">
+                              <div className={`flex items-center border rounded-full px-2 ${isCyber ? 'border-white/20' : 'border-slate-200'}`}>
+                                <button onClick={() => updateQuantity(item.id, -1)} className="p-1"><Minus size={14}/></button>
+                                <span className="w-8 text-center text-xs font-black">{item.quantity}</span>
+                                <button onClick={() => updateQuantity(item.id, 1)} className="p-1"><Plus size={14}/></button>
+                              </div>
+                              <button onClick={() => removeFromCart(item.id)} className="ml-auto text-gray-400 hover:text-red-500"><Trash2 size={16}/></button>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </>
+                ) : (
+                  <form id="checkout-form" onSubmit={handlePlaceOrder} className="space-y-6 text-left">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase tracking-widest opacity-50 ml-2">Ім'я</label>
+                      <input 
+                        required 
+                        placeholder="Ваше ім'я" 
+                        value={checkoutForm.name} 
+                        onChange={e => setCheckoutForm({...checkoutForm, name: e.target.value})}
+                        className={`w-full p-4 rounded-2xl outline-none transition-all ${isCyber ? 'bg-white/5 border border-white/10 focus:border-cyber-neon text-white' : 'bg-slate-50 border border-slate-200 focus:border-purple-500'}`}
+                      />
                     </div>
-                  </div>
-                ))}
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase tracking-widest opacity-50 ml-2">Телефон</label>
+                      <input 
+                        required 
+                        type="tel"
+                        placeholder="+380" 
+                        value={checkoutForm.phone} 
+                        onChange={e => setCheckoutForm({...checkoutForm, phone: e.target.value})}
+                        className={`w-full p-4 rounded-2xl outline-none transition-all ${isCyber ? 'bg-white/5 border border-white/10 focus:border-cyber-neon text-white' : 'bg-slate-50 border border-slate-200 focus:border-purple-500'}`}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase tracking-widest opacity-50 ml-2">Адреса доставки</label>
+                      <input 
+                        required 
+                        placeholder="Вулиця, будинок, кв." 
+                        value={checkoutForm.address} 
+                        onChange={e => setCheckoutForm({...checkoutForm, address: e.target.value})}
+                        className={`w-full p-4 rounded-2xl outline-none transition-all ${isCyber ? 'bg-white/5 border border-white/10 focus:border-cyber-neon text-white' : 'bg-slate-50 border border-slate-200 focus:border-purple-500'}`}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase tracking-widest opacity-50 ml-2">Коментар (необов'язково)</label>
+                      <textarea 
+                        placeholder="Особливі побажання" 
+                        value={checkoutForm.comment} 
+                        onChange={e => setCheckoutForm({...checkoutForm, comment: e.target.value})}
+                        className={`w-full p-4 rounded-2xl outline-none h-24 resize-none transition-all ${isCyber ? 'bg-white/5 border border-white/10 focus:border-cyber-neon text-white' : 'bg-slate-50 border border-slate-200 focus:border-purple-500'}`}
+                      />
+                    </div>
+                  </form>
+                )}
               </div>
+
               {cart.length > 0 && (
-                <div className="p-8 border-t border-white/10">
-                  <div className="flex justify-between items-center mb-6"><span className="font-bold opacity-50">Разом</span><span className="text-3xl font-black">{cartTotal} ₴</span></div>
-                  <button className={`w-full py-5 text-white font-black rounded-2xl ${buttonAccent}`} onClick={() => { alert('Замовлення прийнято!'); setCart([]); setIsCartOpen(false); }}>ОФОРМИТИ</button>
+                <div className={`p-8 border-t ${isCyber ? 'bg-cyber-bg border-white/10' : 'bg-slate-50 border-slate-100'}`}>
+                  <div className="flex justify-between items-center mb-6">
+                    <span className="text-xs font-bold opacity-50 uppercase tracking-widest">Разом до сплати</span>
+                    <span className="text-3xl font-black">{cartTotal} ₴</span>
+                  </div>
+                  {!isCheckingOut ? (
+                    <button 
+                      onClick={() => setIsCheckingOut(true)}
+                      className={`w-full py-5 text-white font-black rounded-2xl shadow-xl transition-all ${buttonAccent}`}
+                    >
+                      ПЕРЕЙТИ ДО ОФОРМЛЕННЯ
+                    </button>
+                  ) : (
+                    <button 
+                      type="submit" 
+                      form="checkout-form"
+                      className={`w-full py-5 text-white font-black rounded-2xl shadow-xl transition-all ${buttonAccent}`}
+                    >
+                      ПІДТВЕРДИТИ ЗАМОВЛЕННЯ
+                    </button>
+                  )}
                 </div>
               )}
             </motion.div>
           </>
         )}
       </AnimatePresence>
+
+      <footer className={`py-12 border-t text-center ${isCyber ? 'bg-cyber-dark border-white/5 text-gray-600' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
+        <p className="text-[10px] md:text-xs uppercase font-black tracking-[0.3em] md:tracking-[0.5em] mb-2 px-4">Cyber-Goose Protocol v7.1.0</p>
+        <p className="text-[10px] md:text-sm">© 2077 Нео-Київ | Гусочка. Захищено кібер-щитом.</p>
+      </footer>
     </div>
   );
 }
