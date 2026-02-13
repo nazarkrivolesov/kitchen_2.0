@@ -213,7 +213,7 @@ export default function App() {
         id: Math.random().toString(36).substr(2, 9),
       };
       setMenu(prev => [dish, ...prev]);
-      alert('Кібер-страва інтегрована в меню!');
+      alert('Страва інтегрована в меню!');
     }
 
     setEditingDishId(null);
@@ -238,7 +238,7 @@ export default function App() {
           <div className="flex items-center gap-2 cursor-pointer" onClick={() => {setCurrentView('MENU'); setEditingDishId(null);}}>
             <Zap className={`w-8 h-8 ${isCyber ? 'text-cyber-neon' : 'text-yellow-400'}`} />
             <h1 className={`text-xl md:text-2xl font-black tracking-tighter ${isCyber ? 'text-cyber-neon' : 'text-slate-900'}`}>
-              {isCyber ? 'CYBER' : 'HAPPY'}<span className={isCyber ? 'text-cyber-pink' : 'text-purple-500'}>FOOD</span>
+              ГУСОЧКА
             </h1>
           </div>
           
@@ -299,11 +299,11 @@ export default function App() {
                 )}
                 <div className="relative z-10 text-center px-4 max-w-4xl">
                   <h2 className={`text-4xl md:text-8xl font-black mb-6 leading-tight uppercase ${isCyber ? 'text-white' : 'text-slate-900'}`}>
-                    {isCyber ? 'Український' : 'Кольоровий'} <br /> 
-                    <span className={accentColor}>{isCyber ? 'Кібер-Панк' : 'Смак Радості'}</span>
+                    Заклад <br /> 
+                    <span className={accentColor}>ГУСОЧКА</span>
                   </h2>
                   <p className={`text-base md:text-xl mb-10 font-bold max-w-2xl mx-auto uppercase tracking-widest opacity-80 ${!isCyber ? 'text-indigo-600' : ''}`}>
-                    {isCyber ? 'Доставка зі швидкістю світла 2077' : 'Найвеселіша доставка у вашому місті!'}
+                    {isCyber ? 'Кібер-доставка майбутнього вже тут' : 'Найсмачніша та найяскравіша їжа у вашому районі!'}
                   </p>
                   <button 
                     onClick={() => document.getElementById('menu-grid')?.scrollIntoView({ behavior: 'smooth' })}
@@ -390,7 +390,7 @@ export default function App() {
               <div className="flex items-center justify-between mb-8 md:mb-12">
                 <div className="flex items-center gap-4">
                   <div className={`p-3 md:p-4 rounded-2xl ${isCyber ? 'bg-cyber-pink' : 'bg-purple-100'}`}>
-                    <Sparkles className={isCyber ? 'text-white' : 'text-purple-600'} size={24} md:size={32} />
+                    <Sparkles className={isCyber ? 'text-white' : 'text-purple-600'} size={24} />
                   </div>
                   <div>
                     <h2 className={`text-2xl md:text-4xl font-black ${isCyber ? 'text-white' : 'text-slate-900'}`}>АДМІН ПАНЕЛЬ</h2>
@@ -518,72 +518,74 @@ export default function App() {
         </AnimatePresence>
       </main>
 
-      {/* Dish Detail Modal */}
+      {/* Dish Detail Modal - Perfectly Centered */}
       <AnimatePresence>
         {selectedDish && (
           <>
             <motion.div 
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               onClick={() => setSelectedDish(null)}
-              className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100]"
+              className="fixed inset-0 bg-black/85 backdrop-blur-md z-[100]"
             />
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.9, y: 20 }} 
-              animate={{ opacity: 1, scale: 1, y: 0 }} 
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className={`fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[92%] md:w-full max-w-2xl max-h-[90vh] overflow-y-auto z-[110] shadow-2xl p-0 ${isCyber ? 'bg-cyber-dark text-white border border-white/10' : 'bg-white text-slate-900 rounded-[2.5rem]'}`}
-            >
-              <button onClick={() => setSelectedDish(null)} className="absolute top-4 md:top-6 right-4 md:right-6 p-2 bg-black/40 hover:bg-black/60 rounded-full text-white z-20 transition-colors">
-                <X size={20} md:size={24} />
-              </button>
-              
-              <div className="relative h-64 md:h-80 w-full">
-                <img src={selectedDish.image} alt={selectedDish.name} className="w-full h-full object-cover" />
-                <div className={`absolute bottom-0 left-0 w-full p-6 md:p-8 bg-gradient-to-t ${isCyber ? 'from-cyber-dark' : 'from-white'} to-transparent`}>
-                  <div className={`inline-block px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest mb-4 ${isCyber ? 'bg-cyber-pink text-white' : 'bg-purple-600 text-white'}`}>
-                    {selectedDish.category}
-                  </div>
-                  <h2 className="text-2xl md:text-4xl font-black uppercase tracking-tight line-clamp-2">{selectedDish.name}</h2>
-                </div>
-              </div>
-
-              <div className="p-6 md:p-8 pt-2 md:pt-4">
-                <div className="flex flex-wrap items-center gap-4 md:gap-6 mb-8 text-xs font-bold uppercase opacity-60">
-                  <div className="flex items-center gap-2">
-                    <Clock size={16} /> 20-30 хв
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Flame size={16} className="text-orange-500" /> 450 ккал
-                  </div>
-                  <div className={`ml-auto text-xl md:text-2xl font-black ${isCyber ? 'text-cyber-neon' : 'text-slate-900'}`}>
-                    {selectedDish.price} ₴
-                  </div>
-                </div>
-
-                <div className="mb-8 md:mb-10">
-                  <h3 className={`text-xs font-black uppercase tracking-[0.3em] mb-4 ${isCyber ? 'text-cyber-pink' : 'text-slate-400'}`}>Про страву</h3>
-                  <p className={`text-base md:text-lg leading-relaxed ${isCyber ? 'text-gray-300' : 'text-slate-600'}`}>{selectedDish.description}</p>
-                </div>
-
-                <div className="mb-10 md:mb-12">
-                  <h3 className={`text-xs font-black uppercase tracking-[0.3em] mb-4 ${isCyber ? 'text-cyber-pink' : 'text-slate-400'}`}>Інгредієнти</h3>
-                  <ul className={`grid grid-cols-1 sm:grid-cols-2 gap-y-2 list-disc list-inside text-sm font-medium ${isCyber ? 'text-gray-400' : 'text-slate-600'}`}>
-                    {selectedDish.ingredients.map((ing, i) => (
-                      <li key={i} className={`hover:${isCyber ? 'text-cyber-neon' : 'text-purple-600'} transition-colors cursor-default`}>
-                        {ing}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                <button 
-                  onClick={() => { addToCart(selectedDish); setSelectedDish(null); }}
-                  className={`w-full py-5 rounded-2xl font-black text-white shadow-xl flex items-center justify-center gap-3 transition-all ${buttonAccent}`}
-                >
-                  <ShoppingBag size={20} /> ДОДАТИ У КОШИК ЗА {selectedDish.price} ₴
+            <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 pointer-events-none">
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9, y: 20 }} 
+                animate={{ opacity: 1, scale: 1, y: 0 }} 
+                exit={{ opacity: 0, scale: 0.9, y: 20 }}
+                className={`pointer-events-auto w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl p-0 relative ${isCyber ? 'bg-cyber-dark text-white border border-white/10' : 'bg-white text-slate-900 rounded-[2.5rem]'}`}
+              >
+                <button onClick={() => setSelectedDish(null)} className="absolute top-4 md:top-6 right-4 md:right-6 p-2 bg-black/40 hover:bg-black/60 rounded-full text-white z-20 transition-colors">
+                  <X size={20} />
                 </button>
-              </div>
-            </motion.div>
+                
+                <div className="relative h-64 md:h-80 w-full">
+                  <img src={selectedDish.image} alt={selectedDish.name} className="w-full h-full object-cover" />
+                  <div className={`absolute bottom-0 left-0 w-full p-6 md:p-8 bg-gradient-to-t ${isCyber ? 'from-cyber-dark' : 'from-white'} to-transparent`}>
+                    <div className={`inline-block px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest mb-4 ${isCyber ? 'bg-cyber-pink text-white' : 'bg-purple-600 text-white'}`}>
+                      {selectedDish.category}
+                    </div>
+                    <h2 className="text-2xl md:text-4xl font-black uppercase tracking-tight line-clamp-2">{selectedDish.name}</h2>
+                  </div>
+                </div>
+
+                <div className="p-6 md:p-8 pt-2 md:pt-4">
+                  <div className="flex flex-wrap items-center gap-4 md:gap-6 mb-8 text-xs font-bold uppercase opacity-60">
+                    <div className="flex items-center gap-2">
+                      <Clock size={16} /> 20-30 хв
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Flame size={16} className="text-orange-500" /> 450 ккал
+                    </div>
+                    <div className={`ml-auto text-xl md:text-2xl font-black ${isCyber ? 'text-cyber-neon' : 'text-slate-900'}`}>
+                      {selectedDish.price} ₴
+                    </div>
+                  </div>
+
+                  <div className="mb-8 md:mb-10 text-left">
+                    <h3 className={`text-xs font-black uppercase tracking-[0.3em] mb-4 ${isCyber ? 'text-cyber-pink' : 'text-slate-400'}`}>Про страву</h3>
+                    <p className={`text-base md:text-lg leading-relaxed ${isCyber ? 'text-gray-300' : 'text-slate-600'}`}>{selectedDish.description}</p>
+                  </div>
+
+                  <div className="mb-10 md:mb-12 text-left">
+                    <h3 className={`text-xs font-black uppercase tracking-[0.3em] mb-4 ${isCyber ? 'text-cyber-pink' : 'text-slate-400'}`}>Інгредієнти</h3>
+                    <ul className={`grid grid-cols-1 sm:grid-cols-2 gap-y-2 list-disc list-inside text-sm font-medium ${isCyber ? 'text-gray-400' : 'text-slate-600'}`}>
+                      {selectedDish.ingredients.map((ing, i) => (
+                        <li key={i} className={`hover:${isCyber ? 'text-cyber-neon' : 'text-purple-600'} transition-colors cursor-default`}>
+                          {ing}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  <button 
+                    onClick={() => { addToCart(selectedDish); setSelectedDish(null); }}
+                    className={`w-full py-5 rounded-2xl font-black text-white shadow-xl flex items-center justify-center gap-3 transition-all ${buttonAccent}`}
+                  >
+                    <ShoppingBag size={20} /> ДОДАТИ У КОШИК ЗА {selectedDish.price} ₴
+                  </button>
+                </div>
+              </motion.div>
+            </div>
           </>
         )}
       </AnimatePresence>
@@ -632,7 +634,7 @@ export default function App() {
                     <span className="text-xs font-bold opacity-50 uppercase tracking-widest">Разом</span>
                     <span className="text-3xl font-black">{cartTotal} ₴</span>
                   </div>
-                  <button className={`w-full py-5 text-white font-black rounded-2xl shadow-xl ${buttonAccent}`} onClick={() => { alert('Дякуємо! Ваше кібер-замовлення передано кур\'єру!'); setCart([]); setIsCartOpen(false); }}>ОФОРМИТИ ЗАМОВЛЕННЯ</button>
+                  <button className={`w-full py-5 text-white font-black rounded-2xl shadow-xl ${buttonAccent}`} onClick={() => { alert('Дякуємо! Ваше замовлення з "Гусочки" передано кур\'єру!'); setCart([]); setIsCartOpen(false); }}>ОФОРМИТИ ЗАМОВЛЕННЯ</button>
                 </div>
               )}
             </motion.div>
@@ -641,8 +643,8 @@ export default function App() {
       </AnimatePresence>
 
       <footer className={`py-12 border-t text-center ${isCyber ? 'bg-cyber-dark border-white/5 text-gray-600' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
-        <p className="text-[10px] md:text-xs uppercase font-black tracking-[0.3em] md:tracking-[0.5em] mb-2 px-4">Cyber-Delivery Protocol v4.5.1 Enhanced</p>
-        <p className="text-[10px] md:text-sm">© 2077 Нео-Київ. Захищено кібер-щитом.</p>
+        <p className="text-[10px] md:text-xs uppercase font-black tracking-[0.3em] md:tracking-[0.5em] mb-2 px-4">Cyber-Goose Protocol v5.0.1</p>
+        <p className="text-[10px] md:text-sm">© 2077 Нео-Київ | Гусочка. Захищено кібер-щитом.</p>
       </footer>
     </div>
   );
