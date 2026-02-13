@@ -6,21 +6,29 @@ import {
   Zap, Flame, Palette, ArrowLeft, ShoppingBag, Sparkles, 
   Image as ImageIcon, Info, Clock, Edit2, LogOut, LogIn,
   ClipboardList, Package, Truck, CheckCircle, Ban, User, Phone, MapPin, MessageSquare, AlertTriangle,
-  Bell, Check, Info as InfoIcon
+  Bell, Check, Info as InfoIcon, History, Repeat, Chrome
 } from 'lucide-react';
 import { 
   collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, 
-  query, orderBy, serverTimestamp 
+  query, orderBy, serverTimestamp, where 
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-// Fix: Use any casting to handle potential type resolution issues with firebase/auth where members are reported as not exported
+// Fix: Use any casting to handle potential type resolution issues with firebase/auth
 import * as firebaseAuth from 'firebase/auth';
-const { onAuthStateChanged, signInWithEmailAndPassword, signOut } = firebaseAuth as any;
+const { 
+  onAuthStateChanged, 
+  signInWithEmailAndPassword, 
+  signOut, 
+  GoogleAuthProvider, 
+  signInWithPopup 
+} = firebaseAuth as any;
 import { db, auth, storage } from './firebase';
 import { Dish, CartItem, Category, Order, OrderStatus } from './types';
 
 // Fix: Define User type as any to avoid import issues from firebase/auth
 type User = any;
+
+const ADMIN_EMAIL = 'admin@cybergoose.ua'; // Hardcoded admin email for demo
 
 interface Notification {
   id: number;
@@ -32,6 +40,7 @@ export default function App() {
   const [menu, setMenu] = useState<Dish[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [currentView, setCurrentView] = useState<'MENU' | 'ADMIN'>('MENU');
   const [adminTab, setAdminTab] = useState<'MENU' | 'ORDERS'>('MENU');
@@ -40,6 +49,7 @@ export default function App() {
   const [selectedDish, setSelectedDish] = useState<Dish | null>(null);
   const [editingDishId, setEditingDishId] = useState<string | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [userOrders, setUserOrders] = useState<Order[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [orderIdToCancel, setOrderIdToCancel] = useState<string | null>(null);
@@ -74,6 +84,8 @@ export default function App() {
   const [uploadingImage, setUploadingImage] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const isAdmin = useMemo(() => user?.email === ADMIN_EMAIL, [user]);
+
   // Helper for notifications
   const notify = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
     const id = Date.now();
@@ -87,6 +99,13 @@ export default function App() {
     const unsub = onAuthStateChanged(auth, (u: any) => {
       setUser(u);
       setIsLoading(false);
+      if (u) {
+        setCheckoutForm(prev => ({
+          ...prev,
+          name: u.displayName || prev.name,
+          phone: prev.phone // Phone isn't always available via Google
+        }));
+      }
     });
     return unsub;
   }, []);
@@ -104,9 +123,9 @@ export default function App() {
     return unsub;
   }, []);
 
-  // Sync Orders
+  // Sync All Orders (for Admin)
   useEffect(() => {
-    if (user && currentView === 'ADMIN') {
+    if (isAdmin && currentView === 'ADMIN') {
       const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
       const unsub = onSnapshot(q, (snapshot) => {
         const items = snapshot.docs.map(d => ({ 
@@ -117,7 +136,29 @@ export default function App() {
       });
       return unsub;
     }
-  }, [user, currentView]);
+  }, [isAdmin, currentView]);
+
+  // Sync User Orders (for Customer)
+  useEffect(() => {
+    if (user && !isAdmin) {
+      const q = query(
+        collection(db, 'orders'), 
+        where('userId', '==', user.uid),
+        orderBy('createdAt', 'desc')
+      );
+      const unsub = onSnapshot(q, (snapshot) => {
+        const items = snapshot.docs.map(d => ({ 
+          id: d.id, 
+          ...d.data() 
+        } as Order));
+        setUserOrders(items);
+      }, (err) => {
+        console.warn("Order query error (likely index missing):", err);
+        // Fallback or index link notification could go here
+      });
+      return unsub;
+    }
+  }, [user, isAdmin]);
 
   useEffect(() => {
     if (activeTheme === 'CYBER') {
@@ -182,7 +223,7 @@ export default function App() {
 
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (user) {
+    if (isAdmin) {
       notify('Адміністратори не можуть оформлювати замовлення.', 'error');
       return;
     }
@@ -195,7 +236,9 @@ export default function App() {
       items: cart,
       total: orderTotal,
       status: 'new' as OrderStatus,
-      createdAt: serverTimestamp()
+      createdAt: serverTimestamp(),
+      userId: user?.uid || null,
+      userEmail: user?.email || null
     };
 
     try {
@@ -204,11 +247,17 @@ export default function App() {
       setCart([]);
       setIsCheckingOut(false);
       setIsCartOpen(false);
-      setCheckoutForm({ name: '', phone: '', address: '', comment: '' });
       setCheckoutErrors([]);
     } catch (err: any) {
       notify('Помилка при оформленні: ' + err.message, 'error');
     }
+  };
+
+  const handleRepeatOrder = (order: Order) => {
+    setCart(order.items);
+    setIsHistoryOpen(false);
+    setIsCartOpen(true);
+    notify('Замовлення повторено! Товари додано в кошик.', 'success');
   };
 
   const updateOrderStatus = async (orderId: string, newStatus: OrderStatus) => {
@@ -247,10 +296,22 @@ export default function App() {
     }
   };
 
+  const handleGoogleLogin = async () => {
+    const provider = new GoogleAuthProvider();
+    try {
+      await signInWithPopup(auth, provider);
+      notify('Успішний вхід через Google!', 'success');
+      setLoginErrors([]);
+    } catch (err: any) {
+      notify('Помилка входу Google: ' + err.message, 'error');
+    }
+  };
+
   const handleLogout = () => {
     signOut(auth);
     notify('Ви вийшли з системи', 'info');
     setCurrentView('MENU');
+    setIsHistoryOpen(false);
   };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -378,13 +439,24 @@ export default function App() {
             <button onClick={() => setActiveTheme(isCyber ? 'RAINBOW' : 'CYBER')} className={`p-2 rounded-full border transition-all ${isCyber ? 'border-cyber-pink text-cyber-pink hover:bg-cyber-pink/20' : 'border-purple-200 text-purple-600 hover:bg-purple-50'}`}>
               <Palette size={20} />
             </button>
-            <button onClick={() => { setCurrentView(currentView === 'MENU' ? 'ADMIN' : 'MENU'); setEditingDishId(null); }} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all text-[10px] md:text-xs font-bold uppercase tracking-widest ${currentView === 'ADMIN' ? 'bg-cyber-pink text-white border-cyber-pink shadow-lg' : isCyber ? 'border-white/20 text-gray-400 hover:text-white' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
-              {currentView === 'ADMIN' ? <ArrowLeft size={16} /> : <Settings size={16} />}
-              <span className="hidden sm:inline">{currentView === 'ADMIN' ? 'На головну' : 'Адмін'}</span>
-            </button>
-            {user && currentView === 'ADMIN' && (
+            
+            {isAdmin && (
+              <button onClick={() => { setCurrentView(currentView === 'MENU' ? 'ADMIN' : 'MENU'); setEditingDishId(null); }} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all text-[10px] md:text-xs font-bold uppercase tracking-widest ${currentView === 'ADMIN' ? 'bg-cyber-pink text-white border-cyber-pink shadow-lg' : isCyber ? 'border-white/20 text-gray-400 hover:text-white' : 'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
+                {currentView === 'ADMIN' ? <ArrowLeft size={16} /> : <Settings size={16} />}
+                <span className="hidden sm:inline">{currentView === 'ADMIN' ? 'На головну' : 'Адмін'}</span>
+              </button>
+            )}
+
+            {!isAdmin && user && (
+               <button onClick={() => setIsHistoryOpen(true)} className={`p-2 rounded-full border transition-all ${isCyber ? 'border-cyber-neon text-cyber-neon hover:bg-cyber-neon/10' : 'border-slate-900 text-slate-900'}`}>
+                <History size={22} />
+              </button>
+            )}
+
+            {user && (
               <button onClick={handleLogout} className="p-2 text-red-500 hover:bg-red-50 rounded-full transition-all"><LogOut size={20} /></button>
             )}
+
             {currentView === 'MENU' && (
               <button onClick={() => { setIsCartOpen(true); setIsCheckingOut(false); }} className={`relative p-2 rounded-full border transition-all ${isCyber ? 'border-cyber-neon text-cyber-neon hover:bg-cyber-neon/10' : 'border-slate-900 text-slate-900 bg-slate-900 text-white'}`}>
                 <ShoppingCart size={22} />
@@ -460,22 +532,12 @@ export default function App() {
             </motion.div>
           ) : (
             <motion.div key="admin-view" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="max-w-7xl mx-auto px-4 py-16">
-              {!user ? (
-                <div className={`max-w-md mx-auto p-8 rounded-3xl border ${cardStyles}`}>
-                  <div className="text-center mb-8"><LogIn className="mx-auto mb-4" size={48} /><h2 className="text-2xl font-black">АДМІН-ВХІД</h2></div>
-                  <form onSubmit={handleLogin} className="space-y-6">
-                    <input type="email" placeholder="Email" required value={email} onChange={e => {setEmail(e.target.value); setLoginErrors([]);}} className={`w-full p-4 rounded-xl outline-none ${isCyber ? 'bg-white/5 border-white/10 text-white' : 'bg-slate-50 border-slate-200'}`} />
-                    <input type="password" placeholder="Пароль" required value={password} onChange={e => {setPassword(e.target.value); setLoginErrors([]);}} className={`w-full p-4 rounded-xl outline-none ${isCyber ? 'bg-white/5 border-white/10 text-white' : 'bg-slate-50 border-slate-200'}`} />
-                    
-                    {loginErrors.length > 0 && (
-                      <div className="text-xs text-red-500 font-bold space-y-1 ml-2">
-                        {loginErrors.map((err, i) => <p key={i}>• {err}</p>)}
-                      </div>
-                    )}
-                    
-                    <button type="submit" className={`w-full py-5 rounded-2xl font-black text-white ${buttonAccent}`}>УВІЙТИ</button>
-                  </form>
-                </div>
+              {!isAdmin ? (
+                 <div className="flex flex-col items-center justify-center py-20 text-center">
+                    <AlertTriangle size={64} className="text-red-500 mb-6" />
+                    <h2 className="text-3xl font-black mb-4 uppercase">Доступ заборонено</h2>
+                    <p className="opacity-60 max-w-md">Тільки обрані оператори протоколу "Гусочка" мають доступ до терміналу управління.</p>
+                 </div>
               ) : (
                 <div className="space-y-12">
                   <div className="flex justify-center mb-10">
@@ -623,12 +685,107 @@ export default function App() {
         </AnimatePresence>
       </main>
 
+      {/* Login / Auth Overlay */}
+      <AnimatePresence>
+        {!user && isCartOpen && isCheckingOut && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[210] flex items-center justify-center p-4 bg-black/90 backdrop-blur-xl">
+             <div className={`max-w-md w-full p-8 rounded-3xl border shadow-2xl relative ${cardStyles}`}>
+                <button onClick={() => setIsCheckingOut(false)} className="absolute top-4 right-4 p-2 opacity-50 hover:opacity-100"><X size={24} /></button>
+                <div className="text-center mb-10">
+                  <Zap className="mx-auto mb-4 text-cyber-neon" size={48} />
+                  <h2 className="text-2xl font-black uppercase tracking-tighter">Потрібна ідентифікація</h2>
+                  <p className="text-xs opacity-50 mt-2">Увійдіть, щоб відстежувати свої замовлення в цифровому часі</p>
+                </div>
+
+                <div className="space-y-4">
+                  <button onClick={handleGoogleLogin} className="w-full py-4 bg-white text-black font-black rounded-2xl flex items-center justify-center gap-3 hover:bg-gray-100 transition-all">
+                    <Chrome size={20} /> УВІЙТИ ЧЕРЕЗ GOOGLE
+                  </button>
+                  
+                  <div className="flex items-center gap-4 opacity-20 my-6">
+                    <div className="h-px flex-grow bg-white"></div>
+                    <span className="text-[10px] font-black">АБО</span>
+                    <div className="h-px flex-grow bg-white"></div>
+                  </div>
+
+                  <form onSubmit={handleLogin} className="space-y-4">
+                    <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} className={`w-full p-4 rounded-xl outline-none ${isCyber ? 'bg-white/5 border-white/10' : 'bg-slate-50'}`} />
+                    <input type="password" placeholder="Пароль" value={password} onChange={e => setPassword(e.target.value)} className={`w-full p-4 rounded-xl outline-none ${isCyber ? 'bg-white/5 border-white/10' : 'bg-slate-50'}`} />
+                    <button type="submit" className={`w-full py-4 rounded-2xl font-black text-white ${buttonAccent}`}>УВІЙТИ</button>
+                  </form>
+                </div>
+             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* User History Overlay */}
+      <AnimatePresence>
+        {isHistoryOpen && (
+          <>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsHistoryOpen(false)} className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[140]" />
+            <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} className={`fixed right-0 top-0 h-full w-full max-w-lg z-[150] flex flex-col shadow-2xl ${isCyber ? 'bg-cyber-dark text-white border-l border-white/10' : 'bg-white text-slate-900'}`}>
+              <div className="p-6 border-b flex items-center justify-between border-white/10">
+                <div className="flex items-center gap-3">
+                  <History size={24} className="text-cyber-neon" />
+                  <h3 className="text-xl font-black uppercase tracking-tighter">ІСТОРІЯ ЗАМОВЛЕНЬ</h3>
+                </div>
+                <button onClick={() => setIsHistoryOpen(false)}><X size={32} /></button>
+              </div>
+              
+              <div className="flex-grow overflow-y-auto p-6 space-y-6 custom-scroll">
+                {userOrders.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center py-20 opacity-20">
+                    <ShoppingBag size={64} className="mb-4" />
+                    <p className="font-black uppercase tracking-widest">Ще немає замовлень</p>
+                  </div>
+                ) : (
+                  userOrders.map((order) => (
+                    <div key={order.id} className={`p-5 rounded-2xl border transition-all ${isCyber ? 'bg-white/5 border-white/5' : 'bg-slate-50 border-slate-200'}`}>
+                      <div className="flex justify-between items-start mb-4">
+                        <div>
+                          <p className="text-[10px] font-black opacity-40 uppercase">#{order.id.slice(-6).toUpperCase()}</p>
+                          <p className="text-xs font-bold">{order.createdAt?.toDate().toLocaleDateString('uk-UA')}</p>
+                        </div>
+                        <div className={`px-3 py-1 rounded-full border text-[9px] font-black ${getStatusColor(order.status)}`}>
+                          {getStatusLabel(order.status)}
+                        </div>
+                      </div>
+
+                      <div className="space-y-1 mb-6">
+                        {order.items.map((item, i) => (
+                          <p key={i} className="text-xs opacity-60 flex justify-between">
+                            <span>{item.name} x{item.quantity}</span>
+                            <span>{item.price * item.quantity} ₴</span>
+                          </p>
+                        ))}
+                        <div className="pt-2 mt-2 border-t border-white/5 flex justify-between font-black text-sm">
+                          <span>РАЗОМ</span>
+                          <span className="text-cyber-neon">{order.total} ₴</span>
+                        </div>
+                      </div>
+
+                      <button 
+                        onClick={() => handleRepeatOrder(order)}
+                        className={`w-full py-3 rounded-xl font-black text-[10px] uppercase tracking-widest flex items-center justify-center gap-2 border transition-all ${isCyber ? 'border-cyber-neon/30 text-cyber-neon hover:bg-cyber-neon hover:text-cyber-bg' : 'border-slate-900 text-slate-900 hover:bg-slate-900 hover:text-white'}`}
+                      >
+                        <Repeat size={14} /> ПОВТОРИТИ ЗАМОВЛЕННЯ
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
       {/* Confirmation Modals Layer */}
       <AnimatePresence>
         {(orderIdToCancel || dishIdToDelete) && (
           <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => {setOrderIdToCancel(null); setDishIdToDelete(null);}} className="fixed inset-0 bg-black/80 backdrop-blur-md z-[150]" />
-            <div className="fixed inset-0 z-[160] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => {setOrderIdToCancel(null); setDishIdToDelete(null);}} className="fixed inset-0 bg-black/80 backdrop-blur-md z-[220]" />
+            <div className="fixed inset-0 z-[230] flex items-center justify-center p-4">
               <motion.div 
                 initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}
                 className={`max-w-sm w-full p-8 text-center border shadow-2xl ${cardStyles}`}
@@ -785,19 +942,19 @@ export default function App() {
                   {!isCheckingOut ? (
                     <button 
                       onClick={() => setIsCheckingOut(true)}
-                      disabled={!!user}
-                      className={`w-full py-5 text-white font-black rounded-2xl shadow-xl transition-all ${!!user ? 'opacity-30 cursor-not-allowed bg-gray-600' : buttonAccent}`}
+                      disabled={!!isAdmin}
+                      className={`w-full py-5 text-white font-black rounded-2xl shadow-xl transition-all ${!!isAdmin ? 'opacity-30 cursor-not-allowed bg-gray-600' : buttonAccent}`}
                     >
-                      {!!user ? 'АДМІН НЕ МОЖЕ ЗАМОВЛЯТИ' : 'ПЕРЕЙТИ ДО ОФОРМЛЕННЯ'}
+                      {!!isAdmin ? 'АДМІН НЕ МОЖЕ ЗАМОВЛЯТИ' : 'ПЕРЕЙТИ ДО ОФОРМЛЕННЯ'}
                     </button>
                   ) : (
                     <button 
                       type="submit" 
                       form="checkout-form"
-                      disabled={!!user}
-                      className={`w-full py-5 text-white font-black rounded-2xl shadow-xl transition-all ${!!user ? 'opacity-30 cursor-not-allowed bg-gray-600' : buttonAccent}`}
+                      disabled={!!isAdmin}
+                      className={`w-full py-5 text-white font-black rounded-2xl shadow-xl transition-all ${!!isAdmin ? 'opacity-30 cursor-not-allowed bg-gray-600' : buttonAccent}`}
                     >
-                      {!!user ? 'ОФОРМЛЕННЯ ЗАБЛОКОВАНО' : 'ПІДТВЕРДИТИ ЗАМОВЛЕННЯ'}
+                      {!!isAdmin ? 'ОФОРМЛЕННЯ ЗАБЛОКОВАНО' : 'ПІДТВЕРДИТИ ЗАМОВЛЕННЯ'}
                     </button>
                   )}
                 </div>
@@ -808,7 +965,7 @@ export default function App() {
       </AnimatePresence>
 
       <footer className={`py-12 border-t text-center ${isCyber ? 'bg-cyber-dark border-white/5 text-gray-600' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
-        <p className="text-[10px] md:text-xs uppercase font-black tracking-[0.3em] md:tracking-[0.5em] mb-2 px-4">Cyber-Goose Protocol v7.3.0</p>
+        <p className="text-[10px] md:text-xs uppercase font-black tracking-[0.3em] md:tracking-[0.5em] mb-2 px-4">Cyber-Goose Protocol v8.0.0</p>
         <p className="text-[10px] md:text-sm">© 2077 Нео-Київ | Гусочка. Захищено кібер-щитом.</p>
       </footer>
     </div>
