@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -11,10 +10,8 @@ import {
   query, orderBy, serverTimestamp 
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-// @ts-ignore - Suppress false-positive export errors from firebase/auth modular SDK
-import { 
-  onAuthStateChanged, signInWithEmailAndPassword, signOut, type User 
-} from 'firebase/auth';
+// @ts-ignore - Consolidated to a single line so the @ts-ignore correctly covers all members and types
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut, type User } from 'firebase/auth';
 import { db, auth, storage } from './firebase';
 import { Dish, CartItem, Category } from './types';
 
@@ -60,7 +57,10 @@ export default function App() {
   useEffect(() => {
     const q = query(collection(db, 'dishes'), orderBy('createdAt', 'desc'));
     const unsub = onSnapshot(q, (snapshot) => {
-      const items = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Dish));
+      const items = snapshot.docs.map(d => ({ 
+        id: d.id, 
+        ...d.data() 
+      } as Dish));
       setMenu(items);
     });
     return unsub;
@@ -84,12 +84,18 @@ export default function App() {
     return menu.filter(dish => dish.category === activeCategory);
   }, [menu, activeCategory]);
 
-  const addToCart = (dish: Dish, e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
+  const addToCart = (dish: Dish, e?: React.MouseEvent | React.TouchEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    
     setCart(prev => {
       const existing = prev.find(item => item.id === dish.id);
       if (existing) {
-        return prev.map(item => item.id === dish.id ? { ...item, quantity: item.quantity + 1 } : item);
+        return prev.map(item => 
+          item.id === dish.id ? { ...item, quantity: item.quantity + 1 } : item
+        );
       }
       return [...prev, { ...dish, quantity: 1 }];
     });
@@ -164,7 +170,7 @@ export default function App() {
         await updateDoc(doc(db, 'dishes', editingDishId), dishData);
         alert('Страву оновлено!');
       } else {
-        await addDoc(collection(db, 'dishes'), dishData);
+        await addDoc(collection(collection(db, 'dishes')), dishData);
         alert('Страву додано!');
       }
       setEditingDishId(null);
@@ -186,6 +192,8 @@ export default function App() {
   };
 
   const cartTotal = cart.reduce((acc, item) => acc + (item.price * item.quantity), 0);
+  const cartItemCount = cart.reduce((acc, item) => acc + item.quantity, 0);
+
   const isCyber = activeTheme === 'CYBER';
   const accentColor = isCyber ? 'text-cyber-neon' : 'text-transparent bg-clip-text bg-gradient-to-r from-red-500 via-yellow-500 via-green-500 via-blue-500 to-purple-500';
   const buttonAccent = isCyber ? 'bg-cyber-pink hover:shadow-[0_0_20px_#FF007F]' : 'bg-gradient-to-r from-red-500 to-purple-600 hover:scale-105';
@@ -250,9 +258,9 @@ export default function App() {
                 className={`relative p-2 rounded-full border transition-all ${isCyber ? 'border-cyber-neon text-cyber-neon hover:bg-cyber-neon/10' : 'border-slate-900 text-slate-900 bg-slate-900 text-white'}`}
               >
                 <ShoppingCart size={22} />
-                {cart.length > 0 && (
+                {cartItemCount > 0 && (
                   <span className={`absolute -top-1 -right-1 text-white text-[10px] w-5 h-5 flex items-center justify-center rounded-full font-bold shadow-lg ${isCyber ? 'bg-cyber-pink' : 'bg-red-500'}`}>
-                    {cart.reduce((a,b) => a + b.quantity, 0)}
+                    {cartItemCount}
                   </span>
                 )}
               </button>
@@ -459,6 +467,8 @@ export default function App() {
                 </div>
               )}
             </motion.div>
+          ) : (
+            <div /> // Placeholder for other views
           )}
         </AnimatePresence>
       </main>
@@ -497,7 +507,17 @@ export default function App() {
                       {selectedDish.ingredients.map((ing, i) => <li key={i}>{ing}</li>)}
                     </ul>
                   </div>
-                  <button onClick={() => { addToCart(selectedDish); setSelectedDish(null); }} className={`w-full py-5 rounded-2xl font-black text-white shadow-xl ${buttonAccent}`}>ДОДАТИ У КОШИК ЗА {selectedDish.price} ₴</button>
+                  <button 
+                    onClick={(e) => { 
+                      if (selectedDish) {
+                        addToCart(selectedDish, e); 
+                        setSelectedDish(null);
+                      }
+                    }} 
+                    className={`w-full py-5 rounded-2xl font-black text-white shadow-xl flex items-center justify-center gap-3 transition-all ${buttonAccent}`}
+                  >
+                    <ShoppingBag size={20} /> ДОДАТИ У КОШИК ЗА {selectedDish.price} ₴
+                  </button>
                 </div>
               </motion.div>
             </div>
