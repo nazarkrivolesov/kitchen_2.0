@@ -1,10 +1,11 @@
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ShoppingCart, Plus, Minus, X, Settings, Utensils, Trash2, 
   Zap, Flame, Palette, ArrowLeft, ShoppingBag, Sparkles, 
   Image as ImageIcon, Info, Clock, Edit2, LogOut, LogIn,
-  ClipboardList, Package, Truck, CheckCircle, Ban, User, Phone, MapPin, MessageSquare
+  ClipboardList, Package, Truck, CheckCircle, Ban, User, Phone, MapPin, MessageSquare, AlertTriangle
 } from 'lucide-react';
 import { 
   collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, 
@@ -34,6 +35,7 @@ export default function App() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [orderIdToCancel, setOrderIdToCancel] = useState<string | null>(null);
   
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -144,6 +146,10 @@ export default function App() {
 
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (user) {
+      alert('Адміністратори не можуть оформлювати замовлення.');
+      return;
+    }
     if (!checkoutForm.name || !checkoutForm.phone || !checkoutForm.address) {
       alert('Будь ласка, заповніть обов\'язкові поля');
       return;
@@ -173,6 +179,9 @@ export default function App() {
   const updateOrderStatus = async (orderId: string, newStatus: OrderStatus) => {
     try {
       await updateDoc(doc(db, 'orders', orderId), { status: newStatus });
+      if (newStatus === 'cancelled') {
+        setOrderIdToCancel(null);
+      }
     } catch (err: any) {
       alert('Помилка оновлення статусу: ' + err.message);
     }
@@ -441,8 +450,6 @@ export default function App() {
                         <motion.div 
                           key={order.id} 
                           layout
-                          animate={order.status === 'new' ? { scale: [1, 1.01, 1], boxShadow: isCyber ? ["0 0 0px #39FF14", "0 0 15px #39FF14", "0 0 0px #39FF14"] : "none" } : {}}
-                          transition={{ repeat: Infinity, duration: 2 }}
                           className={`p-6 rounded-3xl border flex flex-col gap-6 ${cardStyles} ${order.status === 'completed' ? 'opacity-60 grayscale' : ''}`}
                         >
                           <div className="flex justify-between items-start">
@@ -496,7 +503,7 @@ export default function App() {
                               </button>
                             )}
                             {(order.status === 'new' || order.status === 'cooking') && (
-                              <button onClick={() => updateOrderStatus(order.id, 'cancelled')} className="col-span-2 py-2 text-red-500 border border-red-500/30 rounded-xl text-[10px] font-black hover:bg-red-500/5">
+                              <button onClick={() => setOrderIdToCancel(order.id)} className="col-span-2 py-2 text-red-500 border border-red-500/30 rounded-xl text-[10px] font-black hover:bg-red-500/5">
                                 СКАСУВАТИ
                               </button>
                             )}
@@ -517,6 +524,33 @@ export default function App() {
           )}
         </AnimatePresence>
       </main>
+
+      {/* Cancel Order Confirmation Modal */}
+      <AnimatePresence>
+        {orderIdToCancel && (
+          <>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setOrderIdToCancel(null)} className="fixed inset-0 bg-black/80 backdrop-blur-md z-[150]" />
+            <div className="fixed inset-0 z-[160] flex items-center justify-center p-4">
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.9 }}
+                className={`max-w-sm w-full p-8 text-center border shadow-2xl ${cardStyles}`}
+              >
+                <div className="mb-6 flex justify-center">
+                  <div className="p-4 bg-red-500/10 rounded-full text-red-500">
+                    <AlertTriangle size={48} />
+                  </div>
+                </div>
+                <h3 className="text-xl font-black mb-4 uppercase tracking-tighter">СКАСУВАТИ ЗАМОВЛЕННЯ?</h3>
+                <p className="text-sm opacity-60 mb-8 leading-relaxed">Ви дійсно хочете скасувати замовлення #{orderIdToCancel.slice(-4).toUpperCase()}? Цю дію неможливо буде відмінити.</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <button onClick={() => setOrderIdToCancel(null)} className={`py-4 rounded-xl font-black text-xs uppercase tracking-widest border transition-all ${isCyber ? 'border-white/10 text-gray-400 hover:text-white' : 'border-slate-200 text-slate-500'}`}>НІ, НАЗАД</button>
+                  <button onClick={() => updateOrderStatus(orderIdToCancel, 'cancelled')} className="py-4 bg-red-600 text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-xl shadow-red-600/20">ТАК, СКАСУВАТИ</button>
+                </div>
+              </motion.div>
+            </div>
+          </>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {selectedDish && (
@@ -633,17 +667,19 @@ export default function App() {
                   {!isCheckingOut ? (
                     <button 
                       onClick={() => setIsCheckingOut(true)}
-                      className={`w-full py-5 text-white font-black rounded-2xl shadow-xl transition-all ${buttonAccent}`}
+                      disabled={!!user}
+                      className={`w-full py-5 text-white font-black rounded-2xl shadow-xl transition-all ${!!user ? 'opacity-30 cursor-not-allowed bg-gray-600' : buttonAccent}`}
                     >
-                      ПЕРЕЙТИ ДО ОФОРМЛЕННЯ
+                      {!!user ? 'АДМІН НЕ МОЖЕ ЗАМОВЛЯТИ' : 'ПЕРЕЙТИ ДО ОФОРМЛЕННЯ'}
                     </button>
                   ) : (
                     <button 
                       type="submit" 
                       form="checkout-form"
-                      className={`w-full py-5 text-white font-black rounded-2xl shadow-xl transition-all ${buttonAccent}`}
+                      disabled={!!user}
+                      className={`w-full py-5 text-white font-black rounded-2xl shadow-xl transition-all ${!!user ? 'opacity-30 cursor-not-allowed bg-gray-600' : buttonAccent}`}
                     >
-                      ПІДТВЕРДИТИ ЗАМОВЛЕННЯ
+                      {!!user ? 'ОФОРМЛЕННЯ ЗАБЛОКОВАНО' : 'ПІДТВЕРДИТИ ЗАМОВЛЕННЯ'}
                     </button>
                   )}
                 </div>
@@ -654,7 +690,7 @@ export default function App() {
       </AnimatePresence>
 
       <footer className={`py-12 border-t text-center ${isCyber ? 'bg-cyber-dark border-white/5 text-gray-600' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
-        <p className="text-[10px] md:text-xs uppercase font-black tracking-[0.3em] md:tracking-[0.5em] mb-2 px-4">Cyber-Goose Protocol v7.1.0</p>
+        <p className="text-[10px] md:text-xs uppercase font-black tracking-[0.3em] md:tracking-[0.5em] mb-2 px-4">Cyber-Goose Protocol v7.2.0</p>
         <p className="text-[10px] md:text-sm">© 2077 Нео-Київ | Гусочка. Захищено кібер-щитом.</p>
       </footer>
     </div>
