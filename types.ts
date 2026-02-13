@@ -7,6 +7,7 @@ export interface Dish {
   image: string;
   category: string;
   ingredients: string[];
+  createdAt?: any;
 }
 
 export interface CartItem extends Dish {
