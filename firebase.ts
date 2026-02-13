@@ -1,11 +1,11 @@
-
 import { initializeApp } from "firebase/app";
-// @ts-ignore - Suppress false-positive module resolution error in some environments
-import { getAuth } from "firebase/auth";
+// Fix: Use any casting to handle potential type resolution issues with firebase/auth where members are reported as not exported
+import * as authModule from "firebase/auth";
+const { getAuth } = authModule as any;
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
-// @ts-ignore - Accessing Vite environment variables requires casting to any for ImportMeta in some TypeScript configurations
+// Fix: Use any casting for import.meta to bypass TypeScript environment issues with Vite's env properties
 const firebaseConfig = {
   apiKey: (import.meta as any).env.VITE_API_KEY,
   authDomain: (import.meta as any).env.VITE_AUTH_DOMAIN,
