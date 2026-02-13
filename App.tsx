@@ -41,6 +41,7 @@ export default function App() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [currentView, setCurrentView] = useState<'MENU' | 'ADMIN'>('MENU');
   const [adminTab, setAdminTab] = useState<'MENU' | 'ORDERS'>('MENU');
@@ -102,8 +103,7 @@ export default function App() {
       if (u) {
         setCheckoutForm(prev => ({
           ...prev,
-          name: u.displayName || prev.name,
-          phone: prev.phone // Phone isn't always available via Google
+          name: prev.name || u.displayName || '',
         }));
       }
     });
@@ -152,9 +152,6 @@ export default function App() {
           ...d.data() 
         } as Order));
         setUserOrders(items);
-      }, (err) => {
-        console.warn("Order query error (likely index missing):", err);
-        // Fallback or index link notification could go here
       });
       return unsub;
     }
@@ -237,8 +234,8 @@ export default function App() {
       total: orderTotal,
       status: 'new' as OrderStatus,
       createdAt: serverTimestamp(),
-      userId: user?.uid || null,
-      userEmail: user?.email || null
+      userId: user?.uid || 'guest',
+      userEmail: user?.email || 'guest'
     };
 
     try {
@@ -248,6 +245,9 @@ export default function App() {
       setIsCheckingOut(false);
       setIsCartOpen(false);
       setCheckoutErrors([]);
+      if (!user) {
+        notify('Порада: Увійдіть у профіль, щоб бачити історію замовлень!', 'info');
+      }
     } catch (err: any) {
       notify('Помилка при оформленні: ' + err.message, 'error');
     }
@@ -287,10 +287,11 @@ export default function App() {
     if (!validateLogin()) return;
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      notify('Вхід успішний! Вітаємо, операторе.', 'success');
+      notify('Вхід успішний!', 'success');
       setEmail('');
       setPassword('');
       setLoginErrors([]);
+      setIsAuthModalOpen(false);
     } catch (err: any) {
       notify('Помилка входу: невірні дані', 'error');
     }
@@ -302,6 +303,7 @@ export default function App() {
       await signInWithPopup(auth, provider);
       notify('Успішний вхід через Google!', 'success');
       setLoginErrors([]);
+      setIsAuthModalOpen(false);
     } catch (err: any) {
       notify('Помилка входу Google: ' + err.message, 'error');
     }
@@ -453,8 +455,12 @@ export default function App() {
               </button>
             )}
 
-            {user && (
+            {user ? (
               <button onClick={handleLogout} className="p-2 text-red-500 hover:bg-red-50 rounded-full transition-all"><LogOut size={20} /></button>
+            ) : (
+              <button onClick={() => setIsAuthModalOpen(true)} className={`p-2 rounded-full border transition-all ${isCyber ? 'border-cyber-neon text-cyber-neon hover:bg-cyber-neon/10' : 'border-slate-900 text-slate-900'}`}>
+                <LogIn size={20} />
+              </button>
             )}
 
             {currentView === 'MENU' && (
@@ -470,7 +476,7 @@ export default function App() {
       </nav>
 
       {/* Notifications Layer */}
-      <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[200] space-y-3 pointer-events-none">
+      <div className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[250] space-y-3 pointer-events-none">
         <AnimatePresence>
           {notifications.map(n => (
             <motion.div
@@ -635,7 +641,7 @@ export default function App() {
                           </div>
 
                           <div className="space-y-3 text-sm">
-                            <div className="flex items-center gap-2"><User size={14} className="opacity-50" /> <span className="font-bold">{order.customer.name}</span></div>
+                            <div className="flex items-center gap-2"><User size={14} className="opacity-50" /> <span className="font-bold">{order.customer.name}</span> <span className="text-[10px] opacity-30">({order.userId === 'guest' ? 'Гість' : 'Клієнт'})</span></div>
                             <div className="flex items-center gap-2"><Phone size={14} className="opacity-50" /> <span className="opacity-80">{order.customer.phone}</span></div>
                             <div className="flex items-center gap-2"><MapPin size={14} className="opacity-50" /> <span className="opacity-80">{order.customer.address}</span></div>
                             {order.customer.comment && (
@@ -687,13 +693,13 @@ export default function App() {
 
       {/* Login / Auth Overlay */}
       <AnimatePresence>
-        {!user && isCartOpen && isCheckingOut && (
+        {isAuthModalOpen && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[210] flex items-center justify-center p-4 bg-black/90 backdrop-blur-xl">
              <div className={`max-w-md w-full p-8 rounded-3xl border shadow-2xl relative ${cardStyles}`}>
-                <button onClick={() => setIsCheckingOut(false)} className="absolute top-4 right-4 p-2 opacity-50 hover:opacity-100"><X size={24} /></button>
+                <button onClick={() => setIsAuthModalOpen(false)} className="absolute top-4 right-4 p-2 opacity-50 hover:opacity-100"><X size={24} /></button>
                 <div className="text-center mb-10">
                   <Zap className="mx-auto mb-4 text-cyber-neon" size={48} />
-                  <h2 className="text-2xl font-black uppercase tracking-tighter">Потрібна ідентифікація</h2>
+                  <h2 className="text-2xl font-black uppercase tracking-tighter">Вхід в Систему</h2>
                   <p className="text-xs opacity-50 mt-2">Увійдіть, щоб відстежувати свої замовлення в цифровому часі</p>
                 </div>
 
@@ -709,8 +715,13 @@ export default function App() {
                   </div>
 
                   <form onSubmit={handleLogin} className="space-y-4">
-                    <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} className={`w-full p-4 rounded-xl outline-none ${isCyber ? 'bg-white/5 border-white/10' : 'bg-slate-50'}`} />
-                    <input type="password" placeholder="Пароль" value={password} onChange={e => setPassword(e.target.value)} className={`w-full p-4 rounded-xl outline-none ${isCyber ? 'bg-white/5 border-white/10' : 'bg-slate-50'}`} />
+                    <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} className={`w-full p-4 rounded-xl outline-none ${isCyber ? 'bg-white/5 border-white/10 text-white' : 'bg-slate-50 border border-slate-200'}`} />
+                    <input type="password" placeholder="Пароль" value={password} onChange={e => setPassword(e.target.value)} className={`w-full p-4 rounded-xl outline-none ${isCyber ? 'bg-white/5 border-white/10 text-white' : 'bg-slate-50 border border-slate-200'}`} />
+                    {loginErrors.length > 0 && (
+                      <div className="text-xs text-red-500 font-bold space-y-1">
+                        {loginErrors.map((err, i) => <p key={i}>• {err}</p>)}
+                      </div>
+                    )}
                     <button type="submit" className={`w-full py-4 rounded-2xl font-black text-white ${buttonAccent}`}>УВІЙТИ</button>
                   </form>
                 </div>
@@ -882,54 +893,66 @@ export default function App() {
                     )}
                   </>
                 ) : (
-                  <form id="checkout-form" onSubmit={handlePlaceOrder} className="space-y-6 text-left">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-black uppercase tracking-widest opacity-50 ml-2">Ім'я</label>
-                      <input 
-                        required 
-                        placeholder="Ваше ім'я" 
-                        value={checkoutForm.name} 
-                        onChange={e => {setCheckoutForm({...checkoutForm, name: e.target.value}); setCheckoutErrors([]);}}
-                        className={`w-full p-4 rounded-2xl outline-none transition-all ${isCyber ? 'bg-white/5 border border-white/10 focus:border-cyber-neon text-white' : 'bg-slate-50 border border-slate-200 focus:border-purple-500'}`}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-black uppercase tracking-widest opacity-50 ml-2">Телефон</label>
-                      <input 
-                        required 
-                        type="tel"
-                        placeholder="+380XXXXXXXXX" 
-                        value={checkoutForm.phone} 
-                        onChange={e => {setCheckoutForm({...checkoutForm, phone: e.target.value}); setCheckoutErrors([]);}}
-                        className={`w-full p-4 rounded-2xl outline-none transition-all ${isCyber ? 'bg-white/5 border border-white/10 focus:border-cyber-neon text-white' : 'bg-slate-50 border border-slate-200 focus:border-purple-500'}`}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-black uppercase tracking-widest opacity-50 ml-2">Адреса доставки</label>
-                      <input 
-                        required 
-                        placeholder="Вулиця, будинок, кв." 
-                        value={checkoutForm.address} 
-                        onChange={e => {setCheckoutForm({...checkoutForm, address: e.target.value}); setCheckoutErrors([]);}}
-                        className={`w-full p-4 rounded-2xl outline-none transition-all ${isCyber ? 'bg-white/5 border border-white/10 focus:border-cyber-neon text-white' : 'bg-slate-50 border border-slate-200 focus:border-purple-500'}`}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-black uppercase tracking-widest opacity-50 ml-2">Коментар (необов'язково)</label>
-                      <textarea 
-                        placeholder="Особливі побажання" 
-                        value={checkoutForm.comment} 
-                        onChange={e => setCheckoutForm({...checkoutForm, comment: e.target.value})}
-                        className={`w-full p-4 rounded-2xl outline-none h-24 resize-none transition-all ${isCyber ? 'bg-white/5 border border-white/10 focus:border-cyber-neon text-white' : 'bg-slate-50 border border-slate-200 focus:border-purple-500'}`}
-                      />
-                    </div>
-
-                    {checkoutErrors.length > 0 && (
-                      <div className="text-xs text-red-500 font-bold space-y-1 ml-2">
-                        {checkoutErrors.map((err, i) => <p key={i}>• {err}</p>)}
+                  <div className="space-y-8">
+                    {!user && (
+                      <div className={`p-4 rounded-2xl border flex items-center justify-between gap-4 ${isCyber ? 'bg-cyber-neon/5 border-cyber-neon/30' : 'bg-slate-50 border-slate-200'}`}>
+                        <div className="text-left">
+                          <p className="text-[10px] font-black uppercase tracking-wider mb-1">Бажаєте зберегти історію?</p>
+                          <p className="text-[9px] opacity-60">Увійдіть через Google, щоб бачити свої замовлення пізніше.</p>
+                        </div>
+                        <button onClick={() => setIsAuthModalOpen(true)} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${isCyber ? 'border-cyber-neon text-cyber-neon hover:bg-cyber-neon hover:text-cyber-bg' : 'border-slate-900 text-slate-900 hover:bg-slate-900 hover:text-white'}`}>УВІЙТИ</button>
                       </div>
                     )}
-                  </form>
+
+                    <form id="checkout-form" onSubmit={handlePlaceOrder} className="space-y-6 text-left">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black uppercase tracking-widest opacity-50 ml-2">Ім'я</label>
+                        <input 
+                          required 
+                          placeholder="Ваше ім'я" 
+                          value={checkoutForm.name} 
+                          onChange={e => {setCheckoutForm({...checkoutForm, name: e.target.value}); setCheckoutErrors([]);}}
+                          className={`w-full p-4 rounded-2xl outline-none transition-all ${isCyber ? 'bg-white/5 border border-white/10 focus:border-cyber-neon text-white' : 'bg-slate-50 border border-slate-200 focus:border-purple-500'}`}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black uppercase tracking-widest opacity-50 ml-2">Телефон</label>
+                        <input 
+                          required 
+                          type="tel"
+                          placeholder="+380XXXXXXXXX" 
+                          value={checkoutForm.phone} 
+                          onChange={e => {setCheckoutForm({...checkoutForm, phone: e.target.value}); setCheckoutErrors([]);}}
+                          className={`w-full p-4 rounded-2xl outline-none transition-all ${isCyber ? 'bg-white/5 border border-white/10 focus:border-cyber-neon text-white' : 'bg-slate-50 border border-slate-200 focus:border-purple-500'}`}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black uppercase tracking-widest opacity-50 ml-2">Адреса доставки</label>
+                        <input 
+                          required 
+                          placeholder="Вулиця, будинок, кв." 
+                          value={checkoutForm.address} 
+                          onChange={e => {setCheckoutForm({...checkoutForm, address: e.target.value}); setCheckoutErrors([]);}}
+                          className={`w-full p-4 rounded-2xl outline-none transition-all ${isCyber ? 'bg-white/5 border border-white/10 focus:border-cyber-neon text-white' : 'bg-slate-50 border border-slate-200 focus:border-purple-500'}`}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black uppercase tracking-widest opacity-50 ml-2">Коментар (необов'язково)</label>
+                        <textarea 
+                          placeholder="Особливі побажання" 
+                          value={checkoutForm.comment} 
+                          onChange={e => setCheckoutForm({...checkoutForm, comment: e.target.value})}
+                          className={`w-full p-4 rounded-2xl outline-none h-24 resize-none transition-all ${isCyber ? 'bg-white/5 border border-white/10 focus:border-cyber-neon text-white' : 'bg-slate-50 border border-slate-200 focus:border-purple-500'}`}
+                        />
+                      </div>
+
+                      {checkoutErrors.length > 0 && (
+                        <div className="text-xs text-red-500 font-bold space-y-1 ml-2">
+                          {checkoutErrors.map((err, i) => <p key={i}>• {err}</p>)}
+                        </div>
+                      )}
+                    </form>
+                  </div>
                 )}
               </div>
 
@@ -954,7 +977,7 @@ export default function App() {
                       disabled={!!isAdmin}
                       className={`w-full py-5 text-white font-black rounded-2xl shadow-xl transition-all ${!!isAdmin ? 'opacity-30 cursor-not-allowed bg-gray-600' : buttonAccent}`}
                     >
-                      {!!isAdmin ? 'ОФОРМЛЕННЯ ЗАБЛОКОВАНО' : 'ПІДТВЕРДИТИ ЗАМОВЛЕННЯ'}
+                      {!!isAdmin ? 'ОФОРМЛЕННЯ ЗАБЛОКОВАНО' : 'ЗАМОВИТИ ЗАРАЗ'}
                     </button>
                   )}
                 </div>
@@ -965,7 +988,7 @@ export default function App() {
       </AnimatePresence>
 
       <footer className={`py-12 border-t text-center ${isCyber ? 'bg-cyber-dark border-white/5 text-gray-600' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
-        <p className="text-[10px] md:text-xs uppercase font-black tracking-[0.3em] md:tracking-[0.5em] mb-2 px-4">Cyber-Goose Protocol v8.0.0</p>
+        <p className="text-[10px] md:text-xs uppercase font-black tracking-[0.3em] md:tracking-[0.5em] mb-2 px-4">Cyber-Goose Protocol v8.1.0</p>
         <p className="text-[10px] md:text-sm">© 2077 Нео-Київ | Гусочка. Захищено кібер-щитом.</p>
       </footer>
     </div>

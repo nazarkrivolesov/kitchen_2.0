@@ -18,6 +18,10 @@ export type Category = 'Перші страви' | 'Основні страви'
 
 export type OrderStatus = 'new' | 'cooking' | 'delivery' | 'completed' | 'cancelled';
 
+/**
+ * Represents a customer order.
+ * Added userId and userEmail to support order tracking and identity management.
+ */
 export interface Order {
   id: string;
   customer: {
@@ -30,4 +34,7 @@ export interface Order {
   total: number;
   status: OrderStatus;
   createdAt: any;
+  // Fix: Adding userId and userEmail to the interface to resolve Property 'userId' does not exist on type 'Order' error
+  userId: string;
+  userEmail: string;
 }
