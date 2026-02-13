@@ -4,17 +4,17 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ShoppingCart, Plus, Minus, X, Settings, Utensils, Trash2, 
   Zap, Flame, Palette, ArrowLeft, ShoppingBag, Sparkles, 
-  Upload, Image as ImageIcon, Info, Clock, Edit2, LogOut, LogIn
+  Image as ImageIcon, Info, Clock, Edit2, LogOut, LogIn
 } from 'lucide-react';
 import { 
   collection, onSnapshot, addDoc, deleteDoc, doc, updateDoc, 
   query, orderBy, serverTimestamp 
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-// @ts-ignore - Fixing "no exported member" errors for Firebase Auth in specific environment
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
-// @ts-ignore - Fixing missing type export error
-import type { User } from 'firebase/auth';
+// @ts-ignore - Suppress false-positive export errors from firebase/auth modular SDK
+import { 
+  onAuthStateChanged, signInWithEmailAndPassword, signOut, type User 
+} from 'firebase/auth';
 import { db, auth, storage } from './firebase';
 import { Dish, CartItem, Category } from './types';
 
@@ -48,7 +48,8 @@ export default function App() {
 
   // Sync Auth
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u: User | null) => {
+    // @ts-ignore
+    const unsub = onAuthStateChanged(auth, (u: any) => {
       setUser(u);
       setIsLoading(false);
     });
@@ -111,6 +112,7 @@ export default function App() {
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      // @ts-ignore
       await signInWithEmailAndPassword(auth, email, password);
       setEmail('');
       setPassword('');
@@ -119,7 +121,11 @@ export default function App() {
     }
   };
 
-  const handleLogout = () => signOut(auth);
+  const handleLogout = () => {
+    // @ts-ignore
+    signOut(auth);
+    setCurrentView('MENU');
+  };
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -212,6 +218,7 @@ export default function App() {
             <button 
               onClick={() => setActiveTheme(isCyber ? 'RAINBOW' : 'CYBER')}
               className={`p-2 rounded-full border transition-all ${isCyber ? 'border-cyber-pink text-cyber-pink hover:bg-cyber-pink/20' : 'border-purple-200 text-purple-600 hover:bg-purple-50'}`}
+              title="Змінити стиль"
             >
               <Palette size={20} className={!isCyber ? 'animate-bounce' : ''} />
             </button>
@@ -232,7 +239,7 @@ export default function App() {
             </button>
 
             {user && currentView === 'ADMIN' && (
-              <button onClick={handleLogout} className="p-2 text-red-500 hover:bg-red-50 rounded-full transition-all">
+              <button onClick={handleLogout} className="p-2 text-red-500 hover:bg-red-50 rounded-full transition-all" title="Вийти">
                 <LogOut size={20} />
               </button>
             )}
@@ -548,7 +555,7 @@ export default function App() {
       </AnimatePresence>
 
       <footer className={`py-12 border-t text-center ${isCyber ? 'bg-cyber-dark border-white/5 text-gray-600' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
-        <p className="text-[10px] md:text-xs uppercase font-black tracking-[0.3em] md:tracking-[0.5em] mb-2 px-4">Cyber-Goose Firebase Protocol v6.0</p>
+        <p className="text-[10px] md:text-xs uppercase font-black tracking-[0.3em] md:tracking-[0.5em] mb-2 px-4">Cyber-Goose Firebase Protocol v6.0.2</p>
         <p className="text-[10px] md:text-sm">© 2077 Нео-Київ | Гусочка. Захищено кібер-щитом.</p>
       </footer>
     </div>
